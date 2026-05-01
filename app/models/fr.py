@@ -10,12 +10,22 @@ class FRProductConfig(BaseModel):
     """Configuration for a single FR product"""
     enabled: bool = True
     power_mw: float = Field(10.0, ge=0, le=1000, description="Allocated power in MW")
-    capacity_price_eur_mw_h: float = Field(15.0, ge=0, le=500, description="Capacity price EUR/MW/h")
+    # Romanian aFRR capacity clears in the €5-8/MW/h range historically.
+    # The earlier €15/MW/h default produced unrealistically high revenue
+    # (~3× too much). Operators set this per-bid based on their target
+    # acceptance rate; €6 is a defensible mid-market default for new entrants.
+    capacity_price_eur_mw_h: float = Field(6.0, ge=0, le=500, description="Capacity price EUR/MW/h (Romanian mid-market default)")
     activation_rate: float = Field(
-        0.10,
-        ge=0.01,
+        0.03,
+        ge=0.0,
         le=0.50,
-        description="Market share percentage (1-50%). Based on Romanian merit-order dispatch: 10% = capturing 10% of total market activations. NOT a duty cycle."
+        description=(
+            "Market share of Romanian aFRR activations captured by this asset. "
+            "Defensible range for a 10 MW new entrant: 1.4-2% (fleet-proportional vs ~500-700 MW Romanian aFRR fleet). "
+            "Above ~0.9% the 10 MW / 20 MWh battery's own throughput cap (7,300 MWh/yr) binds, "
+            "so values >0.9% all produce identical revenue — the previous 10% default was numerically harmless but misleading. "
+            "Source: 12-month DAMAS backfill 2025-05 to 2026-05 = 799k MWh/yr Romania-wide aFRR activations."
+        )
     )
 
 
@@ -35,6 +45,32 @@ class FRSimulationParams(BaseModel):
 
     # Phase D5 — availability factor (97-98% typical for new BESS).
     availability_pct: float = Field(97.5, ge=0.0, le=100.0, description="Annual uptime % (capacity + activation revenue scale)")
+
+    # Realism note (2026-05-02): physically a battery delivers ONE direction
+    # per ISP, but Romanian DAMAS pays capacity reservation fees for BOTH
+    # direction envelopes when the operator's bids clear on both sides.
+    # This is a market convention, not a physical impossibility — the
+    # operator is paid for STANDING-BY in both directions, not for
+    # delivering both simultaneously.
+    # Modes:
+    #   "symmetric" (default) — capacity counted per direction (matches
+    #       Romanian DAMAS symmetric-envelope reality when both bids clear).
+    #       Realistic for operators who bid both stacks competitively.
+    #   "single_direction" — capacity counted only on the highest-power
+    #       direction. Conservative; matches operators who commit to one
+    #       direction only (e.g., UP-only providers).
+    simulation_mode: Literal["single_direction", "symmetric"] = Field(
+        "symmetric",
+        description="Default 'symmetric' matches Romanian DAMAS dual-envelope payment convention. Use 'single_direction' to model up-only or down-only bidders."
+    )
+
+    # Battery rated power (used to detect over-allocation). Defaults to the
+    # max enabled product power; explicit override is recommended.
+    power_mw_rated: Optional[float] = Field(
+        None,
+        ge=0.0,
+        description="Battery rated power in MW. Sum of enabled per-direction product powers may not exceed this (per direction). If None, inferred as max(enabled product power_mw)."
+    )
 
     # Date range
     start_date: Optional[date] = None

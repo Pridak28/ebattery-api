@@ -33,7 +33,7 @@ from app.models.investment import (
 from app.models.pzu import PZUSimulationParams
 from app.services.fr_service import FRService
 from app.services.pzu_service import PZUService
-from app.services.sensitivity import SensitivityConfig, SensitivityReport, monte_carlo
+from app.services.sensitivity import SensitivityConfig, SensitivityReport, _irr, _payback_years, monte_carlo
 from app.services.warranty_tracker import WarrantyConfig, track_throughput
 
 
@@ -223,7 +223,10 @@ class InvestmentService:
             annual_debt_service_eur=annual_debt_service,
             net_profit_after_debt_eur=net_profit,
             roi_percentage=(net_profit / equity * 100) if equity > 0 else 0,
-            payback_years=equity / net_profit if net_profit > 0 else float("inf"),
+            # Cap at 999.0 instead of float("inf") — JSON serializer rejects inf,
+            # and 999 is a clear "never breaks even" sentinel that survives
+            # round-tripping through the API.
+            payback_years=(equity / net_profit) if net_profit > 0 else 999.0,
             profit_margin_percentage=(net_profit / gross_revenue * 100) if gross_revenue > 0 else 0,
             pricing_basis=pricing_basis,
             confidence_label=confidence_label,
@@ -283,6 +286,17 @@ class InvestmentService:
             else 0.0
         )
 
+        # Realism fix #4 (2026-05-02): Romanian aFRR capacity-price compression
+        # with a FLOOR. Y1 + Y2 keep premium pricing (~€399/MWh observed); from
+        # year `compression_start_year` revenue compresses geometrically until
+        # it reaches `compression_floor_pct`% of Y1 revenue, then holds.
+        # This matches the German aFRR trajectory: 70% compression over 2 years
+        # then stable. Without the floor, geometric compression drives cashflow
+        # negative in late years and breaks lifetime-IRR convergence.
+        compression_pct_per_yr = max(0.0, float(params.capacity_price_compression_pct_per_year)) / 100.0
+        compression_start = max(1, int(params.capacity_price_compression_start_year))
+        compression_floor = max(0.0, float(params.capacity_price_compression_floor_pct)) / 100.0
+
         cumulative_efc = 0.0
         for year in range(1, years + 1):
             # D6 calendar + cycle fade.
@@ -291,8 +305,18 @@ class InvestmentService:
             capacity_factor = max(0.0, 1.0 - calendar_fade - cycle_fade)
             opex_factor = (1.0 + infl) ** (year - 1)
 
-            gross_revenue = gross_revenue_y1 * capacity_factor
-            energy_cost = energy_cost_y1 * capacity_factor
+            # Fix #4: capacity-price compression with floor.
+            # Geometric decay from `compression_start` until the per-year
+            # multiplier hits the floor, then holds. Recharge cost doesn't
+            # compress (energy market follows different drivers).
+            years_compressed = max(0, year - compression_start + 1)
+            compression_factor = max(
+                compression_floor,
+                (1.0 - compression_pct_per_yr) ** years_compressed,
+            )
+
+            gross_revenue = gross_revenue_y1 * capacity_factor * compression_factor
+            energy_cost = energy_cost_y1 * capacity_factor  # recharge cost doesn't compress
             operating_cost = operating_cost_y1 * opex_factor
 
             # D4 aux cost — also inflates with OPEX (energy prices grow ~ inflation).
@@ -322,20 +346,27 @@ class InvestmentService:
                 - auxiliary_cost
                 - fx_hedge_cost
             )
+            # Realism fix #4b (2026-05-02): debt service stops at loan_term_years.
+            # The earlier model billed annual_debt_service every projection year,
+            # which is wrong (loan amortizes over loan_term_years and then ends)
+            # AND produced spurious DSCR violations in years 11-15.
+            debt_service_this_year = (
+                annual_debt_service if year <= int(params.loan_term_years) else 0.0
+            )
             # Augmentation hits as a one-off CAPEX outflow; not part of EBITDA.
-            net = ebitda - annual_debt_service - augmentation_cost
+            net = ebitda - debt_service_this_year - augmentation_cost
             cumulative += net
 
             # F2 DSCR — CFADS divided by debt service.
             cfads = ebitda
-            dscr = (cfads / annual_debt_service) if annual_debt_service > 0 else 0.0
+            dscr = (cfads / debt_service_this_year) if debt_service_this_year > 0 else 0.0
 
             cashflow.append(AnnualCashflow(
                 year=year,
                 gross_revenue_eur=gross_revenue,
                 energy_cost_eur=energy_cost,
                 operating_cost_eur=operating_cost,
-                debt_service_eur=annual_debt_service,
+                debt_service_eur=debt_service_this_year,
                 net_profit_eur=net,
                 cumulative_profit_eur=cumulative,
                 auxiliary_cost_eur=auxiliary_cost,
@@ -428,6 +459,16 @@ class InvestmentService:
                 f"lender covenant breached. Consider lower gearing or longer tenor."
             )
 
+        # Lifetime IRR + payback per scenario, computed from the actual cashflow.
+        # Y0 outflow = equity; Y1..N inflows = each year's net_profit.
+        equity_outflow = -float(financing.equity_eur)
+        fr_cf_vec = [equity_outflow] + [cf.net_profit_eur for cf in fr_cashflow]
+        pzu_cf_vec = [equity_outflow] + [cf.net_profit_eur for cf in pzu_cashflow]
+        fr_lifetime_irr = _irr(fr_cf_vec)
+        pzu_lifetime_irr = _irr(pzu_cf_vec)
+        fr_lifetime_payback = _payback_years(fr_cf_vec)
+        pzu_lifetime_payback = _payback_years(pzu_cf_vec)
+
         return InvestmentComparisonResponse(
             params=params,
             financing=financing,
@@ -440,6 +481,13 @@ class InvestmentService:
             pzu_cashflow=pzu_cashflow,
             warnings=top_warnings,
             dscr_violation_years=dscr_violations,
+            fr_year1_roi_pct=fr_scenario.roi_percentage,
+            pzu_year1_roi_pct=pzu_scenario.roi_percentage,
+            fr_lifetime_irr_pct=(fr_lifetime_irr * 100.0) if fr_lifetime_irr == fr_lifetime_irr else None,
+            pzu_lifetime_irr_pct=(pzu_lifetime_irr * 100.0) if pzu_lifetime_irr == pzu_lifetime_irr else None,
+            fr_lifetime_payback_years=(fr_lifetime_payback if fr_lifetime_payback < 1e9 else None),
+            pzu_lifetime_payback_years=(pzu_lifetime_payback if pzu_lifetime_payback < 1e9 else None),
+            projection_horizon_years=projection_years,
         )
 
     def run_sensitivity(
@@ -475,11 +523,16 @@ class InvestmentService:
     def get_defaults(self) -> Dict[str, Any]:
         """Canonical Romanian BESS investment defaults.
 
-        Anchored on the user's actual quote: **€3.5M total install cost for
-        10 MW / 20 MWh** = €175/kWh installed = €350,000/MW. Both apps
-        (Streamlit + battery-analytics-pro) use this as the canonical sizing.
-        Bands €150 / €175 / €250 per kWh reflect realistic 2024-2026 RO
-        market prices.
+        **Project anchor:** €3,500,000 total install cost for 10 MW / 20 MWh
+        = €175/kWh installed (= €350,000/MW). Vendor: **Huawei** (this is the
+        user's reference quote). Sermatec offers below this anchor, BYD and
+        YESS sit between. The €175/kWh band is exceptional vs European norms
+        (typical EPC €300-500/kWh including grid connection, BoP, civils).
+
+        The CAPEX "anchor + EU-typical" band is shown to investors so the
+        model is honest under both the user's vendor quote AND the European
+        bankability case (which is the lifetime IRR a project-finance bank
+        would actually underwrite to).
         """
         capacity_mwh = 20.0
         power_mw = 10.0
@@ -489,7 +542,15 @@ class InvestmentService:
             "capacity_mwh": capacity_mwh,
             "capex_per_kwh": canonical_capex_per_kwh,
             "capex_per_mw": canonical_capex_per_kwh * (capacity_mwh / power_mw) * 1000.0,
+            # Romanian-vendor band (low/mid/high) anchored on user's vendor quotes:
+            #   low (Sermatec-equivalent):     €150/kWh
+            #   mid (Huawei-anchor):           €175/kWh
+            #   high (premium European spec):  €250/kWh
             "capex_per_kwh_band": {"low": 150.0, "mid": 175.0, "high": 250.0},
+            # European-typical band (low/mid/high), used to surface bankability
+            # against EU project-finance norms — banks will underwrite at these
+            # levels, NOT at the user's exceptional vendor quote.
+            "capex_per_kwh_band_eu_typical": {"low": 300.0, "mid": 400.0, "high": 500.0},
             "total_investment_eur": canonical_capex_per_kwh * capacity_mwh * 1000.0,  # = €3,500,000
             "equity_percentage": 50,             # 50/50 debt-to-equity (Romanian BESS norm)
             "loan_interest_rate": 6.0,
@@ -497,12 +558,13 @@ class InvestmentService:
             "opex_percentage": 2.0,
             "insurance_percentage": 0.5,
             "vendor_quote_anchor": {
-                "vendor": "Sermatec",
+                "vendor": "Huawei",
                 "quote_eur": 3_500_000.0,
                 "power_mw": 10.0,
                 "capacity_mwh": 20.0,
                 "eur_per_kwh": 175.0,
+                "note": "User-supplied reference quote. Sermatec quotes below this anchor; YESS / BYD sit between.",
             },
             "confidence_label": "Likely-source / Scenario",
-            "audit_reference": "audit/ROMANIAN_BESS_AUDIT_RISK_INVESTIGATION_2026-05-01.md",
+            "audit_reference": "audit/BESS_REVENUE_REALITY_CHECK_2026-05-02.md",
         }

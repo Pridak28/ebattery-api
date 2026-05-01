@@ -318,6 +318,26 @@ class FRService:
         if "date" in df.columns:
             df["month"] = df["date"].dt.to_period("M")
 
+            # Realism fix (2026-05-02): a single battery cannot earn capacity
+            # revenue on multiple opposite-direction products simultaneously.
+            # Mode behavior:
+            #   single_direction (default) — only the highest-power product
+            #     earns capacity revenue (proxy for a single bid envelope).
+            #     All other enabled products earn ONLY activation revenue
+            #     (the battery is still physically capable of activations
+            #     in their direction; capacity reservation is the constraint).
+            #   symmetric — every enabled product earns capacity revenue
+            #     independently (matches DAMAS symmetric-envelope clearing
+            #     when both sides clear, but over-promises for new entrants).
+            if params.simulation_mode == "single_direction":
+                primary = max(enabled_products.items(), key=lambda kv: kv[1].power_mw)[0]
+                cap_factor_by_product = {
+                    name: (1.0 if name == primary else 0.0)
+                    for name in enabled_products
+                }
+            else:
+                cap_factor_by_product = {name: 1.0 for name in enabled_products}
+
             # Group by month and process all products together.
             # CRITICAL FIX (audit Agent 1): use params.capacity_mwh and the
             # actual calendar month length instead of hardcoded 30 MWh / 30 days,
@@ -337,13 +357,15 @@ class FRService:
                 # Process each enabled product for this month
                 availability = max(0.0, min(float(params.availability_pct) / 100.0, 1.0))
                 for product_name, config in enabled_products.items():
+                    cap_factor = cap_factor_by_product.get(product_name, 1.0)
+                    effective_capacity_price = config.capacity_price_eur_mw_h * cap_factor
                     result = self._compute_monthly_revenue(
                         month_data,
                         product_name,
                         config.power_mw,
                         params.round_trip_efficiency,
                         params.energy_cost_eur_mwh,
-                        config.capacity_price_eur_mw_h,
+                        effective_capacity_price,
                         config.activation_rate,
                         remaining_energy_budget,  # Pass remaining budget
                         data_metadata,
@@ -504,6 +526,23 @@ class FRService:
             ROMANIAN_FR_PRODUCTS["aFRR"]["mari_effective_date"], "%Y-%m-%d"
         ).date()
 
+        # Realism fix (2026-05-02): a single battery cannot be reserved at
+        # full power_mw across multiple FR products simultaneously — they
+        # all compete for the same physical asset. We share the rated MW
+        # equally across selected products. Operators in practice usually
+        # commit to ONE product and bid that envelope; this proration is
+        # the conservative shared-commitment view. A future "per-product
+        # MW allocation" parameter could let operators express asymmetric
+        # commitments (e.g., 7 MW aFRR + 3 MW mFRR).
+        n_products = max(1, len(request.products))
+        per_product_committed_mw = request.power_mw / n_products
+        if n_products > 1:
+            violations.append(
+                f"physical-power constraint: rated {request.power_mw:.1f} MW "
+                f"split across {n_products} products → {per_product_committed_mw:.2f} MW each. "
+                f"Real operators typically commit to a single product family."
+            )
+
         total_cap = 0.0
         total_act = 0.0
         total_cost = 0.0
@@ -513,9 +552,10 @@ class FRService:
             if not cfg:
                 continue
             min_bid = self._min_bid_for_product(product, target_date)
-            if request.power_mw < min_bid:
+            # Min-bid check uses the COMMITTED (not rated) MW.
+            if per_product_committed_mw < min_bid:
                 violations.append(
-                    f"{product}: power_mw={request.power_mw:.1f} below min bid {min_bid:.1f} MW"
+                    f"{product}: committed {per_product_committed_mw:.2f} MW below min bid {min_bid:.1f} MW"
                     f" ({'post-MARI' if mari_active else 'pre-MARI'} on {target_date.isoformat()})"
                 )
 
@@ -523,14 +563,17 @@ class FRService:
             settlement = cfg["settlement"]
             symmetric = bool(cfg.get("symmetric", False))
 
-            # Capacity revenue (paid 24/7 for availability).
-            capacity_revenue = request.power_mw * cap_eur_mw_h * period_hours * availability
+            # Capacity revenue (paid 24/7 for availability) — uses the per-product
+            # share of rated MW, NOT the full rated MW. This avoids double counting
+            # the same physical asset across multiple products.
+            capacity_revenue = per_product_committed_mw * cap_eur_mw_h * period_hours * availability
 
             # Activation MWh + price.
             market_mwh = self._aggregate_market_activated_mwh(df, product)
             our_share_mwh = market_mwh * float(request.activation_share)
-            # Cap by physical throughput.
-            our_max_mwh = request.power_mw * period_hours
+            # Cap by physical throughput — uses the COMMITTED MW for this
+            # product, plus the battery's MWh-cycle ceiling enforced upstream.
+            our_max_mwh = per_product_committed_mw * period_hours
             cleared_mwh = min(our_share_mwh, our_max_mwh) * availability
 
             avg_price = self._avg_activation_price_for_product(df, product)

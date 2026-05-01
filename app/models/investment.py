@@ -32,7 +32,10 @@ class InvestmentParams(BaseModel):
     rte_ac_ac: float = Field(0.88, ge=0.5, le=1.0, description="AC-to-AC round-trip efficiency (sqrt-symmetric)")
     soc_min: float = Field(0.10, ge=0.0, le=0.5, description="Minimum SOC (warranty floor)")
     soc_max: float = Field(0.90, ge=0.5, le=1.0, description="Maximum SOC (warranty ceiling)")
-    auxiliary_load_mw: float = Field(0.3, ge=0.0, description="Continuous HVAC/BMS/fire-suppression draw (MW)")
+    # Industry range for HVAC/BMS/fire suppression: 1-3% of rated power.
+    # Default 1.5% (= 0.15 MW for 10 MW battery) — mid-range, matches modern
+    # Sermatec/Huawei/BYD spec sheets. Earlier 0.3 MW (= 3%) was high-end.
+    auxiliary_load_mw: float = Field(0.15, ge=0.0, description="Continuous HVAC/BMS/fire-suppression draw (MW); default 1.5% of rated")
     availability_pct: float = Field(97.5, ge=0.0, le=100.0, description="Annual uptime %")
     efc_budget: int = Field(6000, ge=1, description="Vendor warranty: equivalent full cycles allowed across asset life")
     warranty_years: int = Field(15, ge=1, le=30, description="Vendor warranty length in years")
@@ -45,6 +48,33 @@ class InvestmentParams(BaseModel):
     # Phase F — risk / financing.
     revenue_currency: Literal["EUR", "RON"] = Field("EUR", description="Currency in which market revenue is denominated")
     fx_hedge_cost_pct: float = Field(2.5, ge=0.0, le=10.0, description="Annual FX hedge cost % of revenue when revenue_currency=RON")
+
+    # Realism fix #4 (2026-05-02): Romanian aFRR capacity prices are 2-4× European
+    # norms today and will compress as more BESS enters. UK Dynamic Containment
+    # fell 75% in 24 months once 6 GW of BESS came online; Germany SRL had
+    # similar compression in 2023-2024.
+    #
+    # Default: 10%/yr starting Y3, FLOOR at 40% of Y1 (so steady-state revenue
+    # is 40% of premium). This matches the German trajectory: prices compressed
+    # ~70% in 2 years then stabilized — they didn't drop to zero. The floor is
+    # critical for 15-year IRR realism (without it, late-year cashflow goes
+    # deeply negative and lifetime IRR becomes ill-defined).
+    capacity_price_compression_pct_per_year: float = Field(
+        8.0, ge=0.0, le=50.0,
+        description="Annual % compression of revenue starting year 3, until floor reached"
+    )
+    capacity_price_compression_start_year: int = Field(
+        3, ge=1, le=15,
+        description="Year in which capacity-price compression begins (Y1+Y2 keep premium pricing)"
+    )
+    capacity_price_compression_floor_pct: float = Field(
+        55.0, ge=0.0, le=100.0,
+        description=(
+            "Floor on revenue as % of Y1 (default 55% = compression saturates at -45% from Y1). "
+            "Captures the German pattern where capacity prices crashed but activation revenue "
+            "(driven by grid stress, not BESS supply) stayed near its market level."
+        )
+    )
 
 
 class FinancingBreakdown(BaseModel):
@@ -145,6 +175,24 @@ class InvestmentComparisonResponse(BaseModel):
 
     # Phase F — DSCR covenant: years where DSCR < 1.20 (lender covenant typical).
     dscr_violation_years: List[int] = []
+
+    # Realism (2026-05-02): the bankability number is the LIFETIME IRR over the
+    # full projection horizon, NOT the Year-1 ROI which can be misleading in
+    # markets with strong premium today and predictable compression (Romania
+    # 2026 fits this pattern). Surface both so investors / lenders read the
+    # right number for their decision.
+    #
+    # ``*_lifetime_irr_pct = None`` means no positive IRR exists over the
+    # projection horizon (project is loss-making in NPV terms). ``0.0``
+    # means a real 0% IRR. ``*_lifetime_payback_years = None`` means the
+    # project never breaks even within the projection.
+    fr_year1_roi_pct: float = 0.0
+    pzu_year1_roi_pct: float = 0.0
+    fr_lifetime_irr_pct: Optional[float] = None
+    pzu_lifetime_irr_pct: Optional[float] = None
+    fr_lifetime_payback_years: Optional[float] = None
+    pzu_lifetime_payback_years: Optional[float] = None
+    projection_horizon_years: int = 0
 
 
 class InvestmentAnalysisResponse(BaseModel):

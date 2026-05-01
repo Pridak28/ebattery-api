@@ -44,6 +44,11 @@ def _irr(cashflows: List[float], guess: float = 0.1, tol: float = 1e-6, max_iter
 
     ``cashflows[0]`` is typically the year-0 outflow (negative). Returns
     NaN if no IRR can be found (all positive or all negative flows).
+
+    For non-monotonic cashflows (multiple sign changes), the NPV function
+    can have multiple roots — we return the LOWEST positive IRR which is
+    the one a project-finance lender cares about. If no positive root
+    exists, returns the negative IRR with smallest absolute value.
     """
     arr = np.asarray(cashflows, dtype=float)
     if arr.size < 2:
@@ -51,34 +56,34 @@ def _irr(cashflows: List[float], guess: float = 0.1, tol: float = 1e-6, max_iter
     if not (np.any(arr > 0) and np.any(arr < 0)):
         return float("nan")
 
-    # Newton-Raphson on NPV.
-    rate = float(guess)
-    for _ in range(max_iter):
+    def npv_at(rate: float) -> float:
         denom = (1.0 + rate) ** np.arange(arr.size)
-        npv = float(np.sum(arr / denom))
-        deriv = float(np.sum(-np.arange(arr.size) * arr / (denom * (1.0 + rate))))
-        if abs(deriv) < 1e-12:
-            break
-        new_rate = rate - npv / deriv
-        if not np.isfinite(new_rate):
-            break
-        if abs(new_rate - rate) < tol:
-            return float(new_rate)
-        rate = new_rate
-        if rate <= -0.99:
-            rate = -0.99 + 1e-3
+        return float(np.sum(arr / denom))
 
-    # Bisection fallback.
-    lo, hi = -0.99, 10.0
+    # Sweep a coarse grid first to localize sign changes (handles
+    # non-monotonic cashflows — Newton can land on the wrong root).
+    test_rates = np.concatenate([
+        np.linspace(-0.95, 0.0, 20),
+        np.linspace(0.01, 1.0, 50),
+        np.linspace(1.05, 5.0, 40),
+    ])
+    npvs = np.array([npv_at(r) for r in test_rates])
+    # Find the first bracket [a, b] where NPV changes sign.
+    sign_changes = []
+    for i in range(len(test_rates) - 1):
+        if npvs[i] * npvs[i + 1] < 0:
+            sign_changes.append((test_rates[i], test_rates[i + 1]))
+    if not sign_changes:
+        return float("nan")
+
+    # Refine via bisection on the FIRST bracket (lowest IRR).
+    lo, hi = sign_changes[0]
     for _ in range(max_iter):
         mid = (lo + hi) / 2.0
-        denom_lo = (1.0 + lo) ** np.arange(arr.size)
-        denom_mid = (1.0 + mid) ** np.arange(arr.size)
-        npv_lo = float(np.sum(arr / denom_lo))
-        npv_mid = float(np.sum(arr / denom_mid))
+        npv_mid = npv_at(mid)
         if abs(npv_mid) < tol:
             return float(mid)
-        if npv_lo * npv_mid < 0:
+        if npv_at(lo) * npv_mid < 0:
             hi = mid
         else:
             lo = mid

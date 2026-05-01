@@ -74,15 +74,10 @@ async def run_sensitivity(request: SensitivityRequest):
 
 @router.get("/defaults")
 async def get_default_params():
-    """Get default investment parameters"""
-    defaults = InvestmentParams()
-    return {
-        "total_investment_eur": defaults.total_investment_eur,
-        "equity_percentage": defaults.equity_percentage,
-        "loan_interest_rate": defaults.loan_interest_rate,
-        "loan_term_years": defaults.loan_term_years,
-        "opex_percentage": defaults.opex_percentage,
-        "insurance_percentage": defaults.insurance_percentage,
-        "power_mw": defaults.power_mw,
-        "capacity_mwh": defaults.capacity_mwh,
-    }
+    """Get default investment parameters.
+
+    Delegates to InvestmentService.get_defaults() which carries the canonical
+    Romanian vendor anchor (€175/kWh = €3.5M for 10 MW / 20 MWh, Huawei),
+    Romanian-vendor and European-typical CAPEX bands, and the audit reference.
+    """
+    return investment_service.get_defaults()
