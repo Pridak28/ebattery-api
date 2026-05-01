@@ -1,0 +1,97 @@
+name: Agent Claude BESS Logic
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "45 */6 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+concurrency:
+  group: agent-claude-bess-logic
+  cancel-in-progress: true
+
+jobs:
+  claude-bess-logic:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Pick one BESS logic issue
+        id: issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ISSUE=$(gh issue list --label agent-claude-bess-logic --label mastermind-created --state open --limit 1 --json number,title,body --jq '.[0]')
+          if [ -z "$ISSUE" ] || [ "$ISSUE" = "null" ]; then
+            echo "has_issue=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_issue=true" >> $GITHUB_OUTPUT
+            echo "$ISSUE" > issue.json
+            echo "number=$(cat issue.json | jq -r '.number')" >> $GITHUB_OUTPUT
+            echo "title=$(cat issue.json | jq -r '.title')" >> $GITHUB_OUTPUT
+            echo "body<<EOF" >> $GITHUB_OUTPUT
+            cat issue.json | jq -r '.body' >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Claude BESS Logic Agent
+        if: steps.issue.outputs.has_issue == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are Claude BESS Logic Agent.
+
+            Follow .github/prompts/worker-rules.md.
+
+            Work on issue:
+            #${{ steps.issue.outputs.number }}
+            ${{ steps.issue.outputs.title }}
+
+            Issue body:
+            ${{ steps.issue.outputs.body }}
+
+            Focus only on:
+            - BESS analytics
+            - battery revenue
+            - arbitrage logic
+            - financial assumptions
+            - market logic
+            - charts that display energy/revenue calculations
+            - input assumptions and validation
+
+            Do not deploy.
+            Do not push to main.
+
+          claude_args: |
+            --allowedTools "Read,Write,Edit,Bash(npm:*),Bash(pnpm:*),Bash(yarn:*),Bash(git:*),Bash(ls:*),Bash(cat:*),Bash(find:*),Bash(grep:*)"
+
+      - name: Detect changes
+        id: changes
+        if: steps.issue.outputs.has_issue == 'true'
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create PR
+        if: steps.issue.outputs.has_issue == 'true' && steps.changes.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: agents/claude-bess-logic-${{ steps.issue.outputs.number }}
+          commit-message: "claude-bess-logic: address issue #${{ steps.issue.outputs.number }}"
+          title: "Claude BESS Logic Agent: ${{ steps.issue.outputs.title }}"
+          body: |
+            Claude BESS Logic Agent worked on issue #${{ steps.issue.outputs.number }}.
+
+            Review carefully before merging because this may affect calculations.
+          delete-branch: true

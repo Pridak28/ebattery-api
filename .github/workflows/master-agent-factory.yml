@@ -1,0 +1,46 @@
+name: Master Agent Factory
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+concurrency:
+  group: master-agent-factory
+  cancel-in-progress: true
+
+jobs:
+  master-agent:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Ensure agent labels exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create agent-codex-runtime --color "1D76DB" --description "Codex runtime/build/dependency agent" || true
+          gh label create agent-codex-testing --color "5319E7" --description "Codex testing/QA agent" || true
+          gh label create agent-claude-uiux --color "FBCA04" --description "Claude UI/UX/product design agent" || true
+          gh label create agent-claude-bess-logic --color "0E8A16" --description "Claude BESS/business logic agent" || true
+          gh label create agent-claude-architecture --color "C2E0C6" --description "Claude architecture/refactor agent" || true
+          gh label create agent-claude-docs --color "D4C5F9" --description "Claude documentation agent" || true
+          gh label create mastermind-created --color "BFDADC" --description "Created by Master Agent" || true
+
+      - name: Run Master Agent to create team tasks
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Read .github/prompts/master-agent-factory.md and follow it exactly.
+            Inspect this repository, then create up to 6 focused GitHub issues using the labels defined in that prompt.
+            Do not edit files, deploy, or push commits.
+          claude_args: |
+            --allowedTools "Read,Bash(ls:*),Bash(find:*),Bash(cat:*),Bash(grep:*),Bash(npm:*),Bash(pnpm:*),Bash(yarn:*),Bash(gh issue:*),Bash(gh label:*)"
