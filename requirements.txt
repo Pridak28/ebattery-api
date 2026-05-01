@@ -13,3 +13,7 @@ python-multipart>=0.0.6
 
 # Development
 python-dotenv>=1.0.0
+
+# HTTP clients and retries
+requests>=2.31.0
+tenacity>=8.4.0

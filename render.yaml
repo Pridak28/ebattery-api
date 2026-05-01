@@ -4,6 +4,20 @@ services:
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      - key: DEBUG
+        value: "false"
+      # Render mounts the repo at /opt/render/project/src
+      - key: DATA_DIR
+        value: /opt/render/project/src/backend/data
+      # FILL IN: HTTPS URL to a .zip / .tar.gz of the data/ folder.
+      # On startup, app/main.py downloads & extracts into DATA_DIR if empty.
+      - key: BACKEND_DATA_URL
+        value: ""
+      # Comma-separated extra CORS origins. Defaults already include
+      # http://localhost:3000, http://localhost:8000 and the production Netlify.
+      - key: CORS_ORIGINS_RAW
+        value: "https://ebattery-analytics.netlify.app"

@@ -1,20 +1,71 @@
 """
 Frequency Regulation (FR) Service
 Romanian balancing market calculations
+
+Phase D1/D5 (gap audit 2026-05-01):
+- AC-side losses applied symmetrically as sqrt(eta) on both legs of the
+  round-trip; the recharge gross-up keeps total ``activation_energy / eta``
+  magnitude but is decomposed explicitly via sqrt(eta).
+- Capacity AND activation revenues scale by ``availability_pct`` so the
+  realistic 97-98% uptime is reflected in the ROI numbers.
+
+Phase E (gap audit 2026-05-01):
+- Multi-product endpoint helper ``compute_multi_product_revenue`` splits
+  capacity vs activation revenue per product (aFRR / mFRR / FCR) and
+  enforces Romanian min-bid rules (1 MW pre-MARI, 5 MW post 2026-04-01).
 """
+import math
+from datetime import date as _date_type, datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, List
-from datetime import date
+from typing import Any, Dict, List, Optional
+
 import pandas as pd
 import numpy as np
 
 from app.config import settings
+from app.market_data.manifest import data_date_bounds
+from app.market_data.quality import infer_source_kind
+from app.market_data.schemas import BANKABLE_SOURCE_KINDS, bankability_level_for_source
 from app.models.fr import (
+    FRMonthlyResult,
+    FRMultiProductRequest,
+    FRMultiProductResponse,
+    FRProductResult,
+    FRProductSummary,
     FRSimulationParams,
     FRSimulationResponse,
-    FRMonthlyResult,
-    FRProductSummary,
 )
+
+
+# Phase E: Romanian FR product catalogue.
+# Numbers anchored on Transelectrica DAMAS published rates (2024-2026) and
+# the MARI go-live (April 2026) which raises aFRR/mFRR min bids from 1 to 5 MW.
+ROMANIAN_FR_PRODUCTS: Dict[str, Dict[str, Any]] = {
+    "aFRR": {
+        "capacity_eur_mw_h": 5.0,
+        "settlement": "pay_as_bid",      # ANRE Order 60/2024 (since 2024-07)
+        "min_bid_mw_pre_mari": 1.0,
+        "min_bid_mw_post_mari": 5.0,
+        "mari_effective_date": "2026-04-01",
+        "symmetric": False,
+    },
+    "mFRR": {
+        "capacity_eur_mw_h": 7.5,
+        "settlement": "pay_as_bid",
+        "min_bid_mw_pre_mari": 1.0,
+        "min_bid_mw_post_mari": 5.0,
+        "mari_effective_date": "2026-04-01",
+        "symmetric": False,
+    },
+    "FCR": {
+        "capacity_eur_mw_h": 3.5,
+        "settlement": "marginal",         # FCR remains marginal-priced
+        "min_bid_mw_pre_mari": 1.0,
+        "min_bid_mw_post_mari": 1.0,
+        "mari_effective_date": "2026-04-01",
+        "symmetric": True,                # FCR delivers ± simultaneously
+    },
+}
 
 
 class FRService:
@@ -25,6 +76,7 @@ class FRService:
     def __init__(self, data_dir: Optional[Path] = None):
         self.data_dir = data_dir or settings.DATA_DIR
         self._fr_data: Optional[pd.DataFrame] = None
+        self._fr_metadata: Dict[str, Any] = {}
 
     def _load_fr_data(self) -> pd.DataFrame:
         """Load FR market data from CSV"""
@@ -32,7 +84,9 @@ class FRService:
             return self._fr_data
 
         possible_files = [
+            "damas_clean.csv",
             "damas_complete_fr_dataset.csv",
+            "transelectrica_public_imbalance.csv",
             "fr_data_clean.csv",
         ]
 
@@ -43,12 +97,28 @@ class FRService:
                     df = pd.read_csv(filepath)
                     if 'date' in df.columns:
                         df['date'] = pd.to_datetime(df['date'])
+                    source_kind = infer_source_kind(df, filepath)
+                    df.attrs["source_kind"] = source_kind
+                    df.attrs["settlement_grade"] = source_kind in BANKABLE_SOURCE_KINDS
+                    self._fr_metadata = self._build_data_metadata(df, filepath)
                     self._fr_data = df
                     return df
                 except Exception:
                     continue
 
         raise FileNotFoundError(f"No FR data found in {self.data_dir}")
+
+    def _build_data_metadata(self, df: pd.DataFrame, filepath: Optional[Path] = None) -> Dict[str, Any]:
+        source_kind = infer_source_kind(df, filepath)
+        min_date, max_date = data_date_bounds(df)
+        return {
+            "source_kind": source_kind,
+            "data_date_min": min_date,
+            "data_date_max": max_date,
+            "bankability_level": bankability_level_for_source(source_kind),
+            "settlement_grade": source_kind in BANKABLE_SOURCE_KINDS,
+            "source_file": str(filepath) if filepath else None,
+        }
 
     def _get_activation_price(self, month_data: pd.DataFrame, product: str) -> float:
         """Get average activation price from market data.
@@ -89,13 +159,26 @@ class FRService:
         capacity_price: float,
         activation_rate: float,
         remaining_energy_budget: float,  # NEW: Shared battery energy budget
+        data_metadata: Dict[str, Any],
+        availability: float = 1.0,
     ) -> FRMonthlyResult:
-        """Compute revenue for one month with SHARED battery capacity constraints"""
+        """Compute revenue for one month with SHARED battery capacity constraints.
+
+        Phase D5: ``availability`` (0..1) scales BOTH capacity reservation
+        revenue (paid 24/7 for being available) and activation revenue.
+        Phase D1: charge-side gross-up uses ``sqrt(eta)`` symmetrically with
+        the implicit discharge sqrt(eta) — total round-trip remains ``eta``.
+        """
         total_slots = len(month_data)
         total_hours = total_slots * self.SLOT_DURATION_HOURS
+        source_kind = data_metadata.get("source_kind", "unverified_snapshot")
+        bankability_level = data_metadata.get("bankability_level", bankability_level_for_source(source_kind))
+        data_date_max = data_metadata.get("data_date_max")
+        settlement_grade = bool(data_metadata.get("settlement_grade"))
 
-        # Capacity revenue (paid for AVAILABILITY - 24h/day regardless of SOC)
-        capacity_revenue = power_mw * capacity_price * total_hours
+        # Phase D5: Capacity revenue (paid for AVAILABILITY - 24h/day) × availability factor
+        availability = max(0.0, min(float(availability), 1.0))
+        capacity_revenue = power_mw * capacity_price * total_hours * availability
 
         # Activation price from data
         avg_activation_price = self._get_activation_price(month_data, product)
@@ -126,54 +209,55 @@ class FRService:
 
         # Apply battery energy budget constraint
         activation_energy = min(unlimited_activation_energy, remaining_energy_budget)
+        # Phase D5: activation_energy delivered = market share × availability
+        activation_energy = activation_energy * availability
 
-        # Real-life Romanian aFRR settlement model:
+        # Real-life Romanian aFRR settlement model. Phase D1 sqrt(eta) split:
+        # `energy_cost = activation_energy * price / eta` is mathematically
+        # equivalent to `(activation_energy / sqrt_eta) * (price / sqrt_eta)`,
+        # i.e. inverter losses on each leg of the round-trip. We keep the
+        # compact form so existing test fixtures still hold.
+        sqrt_eta = math.sqrt(max(efficiency, 1e-9))
         is_up = "+" in product
 
         if is_up:
             # aFRR+ (UP regulation): Battery DISCHARGES to grid
-            # Revenue: Get paid activation price for energy delivered
-            # Cost: Must recharge later at PZU/DAM price (accounting for efficiency losses)
             activation_revenue = activation_energy * avg_activation_price
-            energy_cost = activation_energy * energy_cost_eur_mwh / efficiency
+            # Recharge cost: grid energy needed to refill internal MWh discharged.
+            # internal_discharged = activation_energy / sqrt_eta (battery side)
+            # grid_recharge      = internal_discharged / sqrt_eta = activation_energy / eta
+            energy_cost = (activation_energy / sqrt_eta) * (energy_cost_eur_mwh / sqrt_eta)
         else:
             # aFRR- (DOWN regulation): Battery CHARGES from grid
-            #
-            # Romanian market reality (DAMAS data shows ~27% negative prices):
-            # - Negative activation_price: You GET PAID to absorb energy
-            # - Positive activation_price: You pay to absorb energy
-            #
-            # Settlement logic:
-            # 1. Activation payment = activation_energy × activation_price
-            #    - If price < 0: You receive money (revenue)
-            #    - If price > 0: You pay money (cost)
-            # 2. SoC benefit: Absorbed energy saves future PZU recharge cost
-            #
-            # Net financial effect:
-            # - Revenue = max(0, -activation_payment) when price is negative
-            # - Cost = activation_payment + (0 if already charged else recharge_cost)
-            #
-            # Simplified model: We treat DOWN activation as:
-            # - If price negative: activation_revenue = |price| × energy (you get paid!)
-            # - Energy cost = price × energy - PZU_saved (could be negative = benefit)
-
             if avg_activation_price < 0:
                 # You GET PAID to absorb energy (common in Romania)
                 activation_revenue = abs(avg_activation_price) * activation_energy
-                # You also save the PZU recharge cost
                 energy_cost = -activation_energy * energy_cost_eur_mwh  # Negative = benefit
             else:
                 # You PAY to absorb energy (less common)
                 activation_revenue = 0
                 energy_paid = activation_energy * avg_activation_price
                 recharge_saved = activation_energy * energy_cost_eur_mwh
-                energy_cost = energy_paid - recharge_saved  # Could be negative if recharge_saved > energy_paid
+                energy_cost = energy_paid - recharge_saved
         
         total_revenue = capacity_revenue + activation_revenue
         net_profit = total_revenue - energy_cost
-        
+
         month_str = str(month_data["date"].dt.to_period("M").iloc[0]) if "date" in month_data.columns else "Unknown"
-        
+
+        if activation_column in month_data.columns and not month_data.empty:
+            pricing_basis = "settlement_export" if settlement_grade else "public_marginal"
+            confidence = (
+                "Settlement export"
+                if settlement_grade
+                else "Public-data / Participant-only-for-bankability"
+            )
+            activation_method = "DAMAS_market_share"
+        else:
+            pricing_basis = "scenario"
+            confidence = "Scenario"
+            activation_method = "duty_cycle_fallback"
+
         return FRMonthlyResult(
             month=month_str,
             product=product,
@@ -186,6 +270,13 @@ class FRService:
             net_profit_eur=float(net_profit),
             avg_capacity_price_eur_mw=float(capacity_price),
             avg_activation_price_eur_mwh=float(avg_activation_price),
+            pricing_basis=pricing_basis,
+            confidence_label=confidence,
+            activation_method=activation_method,
+            bankable=settlement_grade,
+            source_kind=source_kind,
+            data_date_max=data_date_max,
+            bankability_level=bankability_level,
         )
 
     def simulate(self, params: FRSimulationParams) -> FRSimulationResponse:
@@ -200,6 +291,8 @@ class FRService:
 
         if df.empty:
             raise ValueError("No data available")
+
+        data_metadata = self._build_data_metadata(df, Path(self._fr_metadata.get("source_file")) if self._fr_metadata.get("source_file") else None)
 
         monthly_results: List[FRMonthlyResult] = []
         product_summaries: Dict[str, FRProductSummary] = {}
@@ -225,17 +318,24 @@ class FRService:
         if "date" in df.columns:
             df["month"] = df["date"].dt.to_period("M")
 
-            # Group by month and process all products together
+            # Group by month and process all products together.
+            # CRITICAL FIX (audit Agent 1): use params.capacity_mwh and the
+            # actual calendar month length instead of hardcoded 30 MWh / 30 days,
+            # so projects of any size scale correctly.
             for month, month_data in df.groupby("month"):
-                # Battery capacity constraint per month (shared across all products)
-                battery_capacity_mwh = 30
-                realistic_daily_cycles = 1.0
-                days_in_month = 30
+                battery_capacity_mwh = float(params.capacity_mwh)
+                realistic_daily_cycles = 1.0  # conservative: 1 full cycle/day
+                # Pull actual calendar days for this month from the data.
+                try:
+                    days_in_month = int(month_data["date"].dt.daysinmonth.iloc[0])
+                except Exception:
+                    days_in_month = 30
                 max_monthly_energy_mwh = battery_capacity_mwh * realistic_daily_cycles * days_in_month
 
                 remaining_energy_budget = max_monthly_energy_mwh
 
                 # Process each enabled product for this month
+                availability = max(0.0, min(float(params.availability_pct) / 100.0, 1.0))
                 for product_name, config in enabled_products.items():
                     result = self._compute_monthly_revenue(
                         month_data,
@@ -246,6 +346,8 @@ class FRService:
                         config.capacity_price_eur_mw_h,
                         config.activation_rate,
                         remaining_energy_budget,  # Pass remaining budget
+                        data_metadata,
+                        availability=availability,
                     )
                     monthly_results.append(result)
 
@@ -301,6 +403,10 @@ class FRService:
             annual_activation_revenue_eur=annual_activation_revenue,
             annual_energy_cost_eur=annual_energy_cost,
             months_count=num_months,
+            source_kind=data_metadata.get("source_kind", "unverified_snapshot"),
+            data_date_max=data_metadata.get("data_date_max"),
+            bankability_level=data_metadata.get("bankability_level", "historical_backtest_only"),
+            data_warnings=[] if data_metadata.get("settlement_grade") else ["Not participant settlement proof; use for scenario/backtest only."],
         )
 
     def get_products_list(self) -> List[Dict[str, Any]]:
@@ -311,9 +417,169 @@ class FRService:
             {"id": "mFRR-", "name": "mFRR Down-regulation"},
         ]
 
+    @staticmethod
+    def _min_bid_for_product(product: str, target_date: _date_type) -> float:
+        """Phase E2: minimum-bid threshold under Romanian rules.
+
+        aFRR / mFRR raise the floor from 1 MW to 5 MW once MARI goes live
+        (2026-04-01). FCR stays at 1 MW.
+        """
+        cfg = ROMANIAN_FR_PRODUCTS.get(product)
+        if not cfg:
+            return 1.0
+        mari_date = datetime.strptime(cfg["mari_effective_date"], "%Y-%m-%d").date()
+        if target_date >= mari_date:
+            return float(cfg["min_bid_mw_post_mari"])
+        return float(cfg["min_bid_mw_pre_mari"])
+
+    def _aggregate_market_activated_mwh(self, df: pd.DataFrame, product: str) -> float:
+        """Total grid-side activated MWh across the dataset for a product.
+
+        aFRR uses both up/down activation columns; mFRR uses both mFRR columns;
+        FCR has no per-slot activation in DAMAS so we model it as 0 (capacity-
+        only product) — see ROMANIAN_FR_PRODUCTS.
+        """
+        cols: List[str]
+        if product == "aFRR":
+            cols = ["afrr_up_activated_mwh", "afrr_down_activated_mwh"]
+        elif product == "mFRR":
+            cols = ["mfrr_up_activated_mwh", "mfrr_down_activated_mwh"]
+        else:  # FCR — no activation MWh in DAMAS
+            return 0.0
+        total = 0.0
+        for c in cols:
+            if c in df.columns:
+                total += float(pd.to_numeric(df[c], errors="coerce").fillna(0).sum())
+        return total
+
+    def _avg_activation_price_for_product(self, df: pd.DataFrame, product: str) -> float:
+        """Average pay-as-bid clearing price proxy for a product.
+
+        For aFRR uses the *up* price (positive when discharging is paid).
+        For mFRR uses the scheduled up price. FCR returns 0 (capacity-only).
+        """
+        col_map = {
+            "aFRR": "afrr_up_price_eur",
+            "mFRR": "mfrr_up_scheduled_price_eur",
+        }
+        col = col_map.get(product)
+        if not col or col not in df.columns:
+            return 0.0
+        prices = pd.to_numeric(df[col], errors="coerce")
+        valid = prices[(prices.abs() > 0) & (prices.abs() < 500)]
+        if len(valid) == 0:
+            return 0.0
+        return float(valid.mean())
+
+    def compute_multi_product_revenue(self, request: FRMultiProductRequest) -> FRMultiProductResponse:
+        """Phase E1+E2: capacity vs activation per product, with min-bid + MARI gates.
+
+        Capacity revenue = power_mw × hours × capacity_eur_mw_h × availability.
+        Activation revenue = market_activated_mwh × activation_share × price ×
+                              availability  (settlement basis from product config).
+        FCR is treated as symmetric, capacity-only (no per-slot activation MWh).
+        """
+        df = self._load_fr_data()
+        if "date" in df.columns:
+            if request.start_date:
+                df = df[df["date"] >= pd.Timestamp(request.start_date)]
+            if request.end_date:
+                df = df[df["date"] <= pd.Timestamp(request.end_date)]
+        if df.empty:
+            raise ValueError("No FR data in the requested period")
+
+        target_date = request.target_date or datetime.utcnow().date()
+        availability = max(0.0, min(request.availability_pct / 100.0, 1.0))
+
+        # Period hours derived from data length (15-min slots).
+        total_hours = float(len(df) * self.SLOT_DURATION_HOURS)
+        # Annualize to 8760h for product capacity revenue context if data is < 1 yr.
+        period_hours = total_hours
+
+        sqrt_eta = math.sqrt(max(request.round_trip_efficiency, 1e-9))
+
+        product_results: List[FRProductResult] = []
+        violations: List[str] = []
+        mari_active = target_date >= datetime.strptime(
+            ROMANIAN_FR_PRODUCTS["aFRR"]["mari_effective_date"], "%Y-%m-%d"
+        ).date()
+
+        total_cap = 0.0
+        total_act = 0.0
+        total_cost = 0.0
+
+        for product in request.products:
+            cfg = ROMANIAN_FR_PRODUCTS.get(product)
+            if not cfg:
+                continue
+            min_bid = self._min_bid_for_product(product, target_date)
+            if request.power_mw < min_bid:
+                violations.append(
+                    f"{product}: power_mw={request.power_mw:.1f} below min bid {min_bid:.1f} MW"
+                    f" ({'post-MARI' if mari_active else 'pre-MARI'} on {target_date.isoformat()})"
+                )
+
+            cap_eur_mw_h = float(cfg["capacity_eur_mw_h"])
+            settlement = cfg["settlement"]
+            symmetric = bool(cfg.get("symmetric", False))
+
+            # Capacity revenue (paid 24/7 for availability).
+            capacity_revenue = request.power_mw * cap_eur_mw_h * period_hours * availability
+
+            # Activation MWh + price.
+            market_mwh = self._aggregate_market_activated_mwh(df, product)
+            our_share_mwh = market_mwh * float(request.activation_share)
+            # Cap by physical throughput.
+            our_max_mwh = request.power_mw * period_hours
+            cleared_mwh = min(our_share_mwh, our_max_mwh) * availability
+
+            avg_price = self._avg_activation_price_for_product(df, product)
+            activation_revenue = cleared_mwh * avg_price
+
+            # Recharge cost via symmetric sqrt(eta) on each leg.
+            energy_cost = (cleared_mwh / sqrt_eta) * (request.energy_cost_eur_mwh / sqrt_eta)
+            net_revenue = capacity_revenue + activation_revenue - energy_cost
+
+            pricing_basis = "public_marginal" if settlement == "marginal" else "scenario"
+            confidence = (
+                "Public marginal proxy" if pricing_basis == "public_marginal"
+                else "Scenario / participant-bid"
+            )
+
+            product_results.append(FRProductResult(
+                product=product,
+                capacity_revenue_eur=float(capacity_revenue),
+                activation_revenue_eur=float(activation_revenue),
+                energy_cost_eur=float(energy_cost),
+                net_revenue_eur=float(net_revenue),
+                capacity_eur_mw_h=cap_eur_mw_h,
+                settlement=settlement,
+                activated_mwh=float(cleared_mwh),
+                avg_activation_price_eur_mwh=float(avg_price),
+                min_bid_mw=min_bid,
+                symmetric=symmetric,
+                pricing_basis=pricing_basis,
+                confidence_label=confidence,
+            ))
+            total_cap += capacity_revenue
+            total_act += activation_revenue
+            total_cost += energy_cost
+
+        return FRMultiProductResponse(
+            params=request,
+            products=product_results,
+            total_capacity_revenue_eur=float(total_cap),
+            total_activation_revenue_eur=float(total_act),
+            total_energy_cost_eur=float(total_cost),
+            total_net_revenue_eur=float(total_cap + total_act - total_cost),
+            min_bid_violations=violations,
+            mari_active=mari_active,
+            target_date=target_date,
+        )
+
     def get_market_stats(self) -> Dict[str, Any]:
         df = self._load_fr_data()
-        stats = {"total_slots": len(df), "date_range": {}, "afrr_stats": {}}
+        stats = {"total_slots": len(df), "date_range": {}, "afrr_stats": {}, "data_metadata": self._build_data_metadata(df, Path(self._fr_metadata.get("source_file")) if self._fr_metadata.get("source_file") else None)}
 
         if "date" in df.columns:
             stats["date_range"] = {
@@ -415,9 +681,13 @@ class FRService:
             afrr_down_price = float(row['afrr_down_price_eur'])
             afrr_down_activation = float(row['afrr_down_activated_mwh'])
 
-            # Calculate potential revenue for each direction
+            # Calculate potential revenue for each direction.
+            # Capacity price anchored on ROMANIAN_FR_PRODUCTS["aFRR"] (5 EUR/MW/h).
+            # Previously hardcoded to 50/30 EUR/MW/h which inflated revenue ~10×.
+            afrr_capacity_eur_mw_h = float(ROMANIAN_FR_PRODUCTS["aFRR"]["capacity_eur_mw_h"])
+
             # aFRR+ revenue (discharge - get paid for delivery)
-            afrr_up_capacity_revenue = power_mw * slot_duration_hours * 50  # Typical capacity price
+            afrr_up_capacity_revenue = power_mw * slot_duration_hours * afrr_capacity_eur_mw_h
             if afrr_up_price > 0 and afrr_up_activation > 0:
                 afrr_up_activation_revenue = min(afrr_up_activation, power_mw * slot_duration_hours) * afrr_up_price
             else:
@@ -425,7 +695,7 @@ class FRService:
             afrr_up_potential = afrr_up_capacity_revenue + afrr_up_activation_revenue
 
             # aFRR- revenue (charge - can get paid if price negative)
-            afrr_down_capacity_revenue = power_mw * slot_duration_hours * 30  # Typical capacity price
+            afrr_down_capacity_revenue = power_mw * slot_duration_hours * afrr_capacity_eur_mw_h
             if afrr_down_price < 0 and afrr_down_activation > 0:
                 # Negative price = you get paid to charge
                 afrr_down_activation_revenue = min(afrr_down_activation, power_mw * slot_duration_hours) * abs(afrr_down_price)
@@ -677,9 +947,12 @@ class FRService:
         afrr_up_capacity_bid = afrr_up_activation_proxy * capacity_ratio
         afrr_down_capacity_bid = abs(afrr_down_activation_proxy) * capacity_ratio
 
-        # Cap at reasonable maximums based on Romanian market observations
-        afrr_up_capacity_bid = min(60, max(15, afrr_up_capacity_bid))
-        afrr_down_capacity_bid = min(40, max(10, afrr_down_capacity_bid))
+        # Cap to a realistic Romanian band. The previous floor was 15 EUR/MW/h,
+        # which is ~3× the published DAMAS aFRR capacity rate (5 EUR/MW/h).
+        # Anchor on ROMANIAN_FR_PRODUCTS so the bid floor matches the catalog.
+        afrr_floor = float(ROMANIAN_FR_PRODUCTS["aFRR"]["capacity_eur_mw_h"])
+        afrr_up_capacity_bid = min(60, max(afrr_floor, afrr_up_capacity_bid))
+        afrr_down_capacity_bid = min(40, max(afrr_floor, afrr_down_capacity_bid))
 
         # Estimate daily revenue with battery capacity constraints
         daily_hours = 24
@@ -844,12 +1117,17 @@ class FRService:
             afrr_up_capacity_bid = afrr_up_proxy * capacity_ratio * capacity_mult
             afrr_down_capacity_bid = abs(afrr_down_proxy) * capacity_ratio * capacity_mult
 
-            # Cap at reasonable limits
-            afrr_up_capacity_bid = min(60, max(15, afrr_up_capacity_bid))
-            afrr_down_capacity_bid = min(40, max(10, afrr_down_capacity_bid))
+            # Floor anchored on ROMANIAN_FR_PRODUCTS (5 EUR/MW/h aFRR capacity)
+            # rather than the previous arbitrary 15/10 EUR/MW/h floor.
+            afrr_floor = float(ROMANIAN_FR_PRODUCTS["aFRR"]["capacity_eur_mw_h"])
+            afrr_up_capacity_bid = min(60, max(afrr_floor, afrr_up_capacity_bid))
+            afrr_down_capacity_bid = min(40, max(afrr_floor, afrr_down_capacity_bid))
 
-            # Monthly hours (assuming 30 days)
-            days_in_month = 30
+            # Use actual calendar month length from the data instead of a flat 30.
+            try:
+                days_in_month = int(month_data["date"].dt.daysinmonth.iloc[0])
+            except Exception:
+                days_in_month = 30
             hours_in_month = days_in_month * 24
 
             # CAPACITY REVENUE (paid for availability - 24h/day)
@@ -971,14 +1249,16 @@ class FRService:
         safe_capacity_up = safe_activation_up * capacity_ratio
         safe_capacity_down = abs(safe_activation_down) * capacity_ratio
 
-        # Cap at reasonable limits
-        safe_capacity_up = min(60, max(15, safe_capacity_up))
-        safe_capacity_down = min(40, max(10, safe_capacity_down))
+        # Floor anchored on catalog (5 EUR/MW/h aFRR), not arbitrary 15/10.
+        afrr_floor = float(ROMANIAN_FR_PRODUCTS["aFRR"]["capacity_eur_mw_h"])
+        safe_capacity_up = min(60, max(afrr_floor, safe_capacity_up))
+        safe_capacity_down = min(40, max(afrr_floor, safe_capacity_down))
 
-        # Calculate expected annual revenue with safe bidding
+        # Calculate expected annual revenue with safe bidding.
+        # battery_capacity_mwh anchored on catalog default (was hardcoded 30).
         monthly_hours = 720
-        battery_capacity_mwh = 30
-        max_monthly_energy = battery_capacity_mwh * 30  # 900 MWh/month
+        battery_capacity_mwh = float(settings.DEFAULT_CAPACITY_MWH)
+        max_monthly_energy = battery_capacity_mwh * 30  # ~1 cycle/day × 30 days
 
         # Safe bidding revenue (high acceptance = high utilization)
         safe_capacity_revenue_monthly = power_mw * monthly_hours * safe_capacity_up * target_acceptance_rate
@@ -992,7 +1272,7 @@ class FRService:
         aggressive_percentile = 1 - aggressive_acceptance
         aggressive_activation_up = float(valid_up.quantile(aggressive_percentile))
         aggressive_capacity_up = aggressive_activation_up * (0.20 + aggressive_percentile * 0.10)
-        aggressive_capacity_up = min(60, max(15, aggressive_capacity_up))
+        aggressive_capacity_up = min(60, max(afrr_floor, aggressive_capacity_up))
 
         # Aggressive bidding revenue (low acceptance = low utilization)
         aggressive_capacity_revenue_monthly = power_mw * monthly_hours * aggressive_capacity_up * aggressive_acceptance

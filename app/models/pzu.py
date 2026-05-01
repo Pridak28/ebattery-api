@@ -8,9 +8,12 @@ from pydantic import BaseModel, Field
 
 class PZUSimulationParams(BaseModel):
     """Parameters for PZU arbitrage simulation"""
-    power_mw: float = Field(15.0, ge=0.1, le=1000, description="Battery power in MW")
-    capacity_mwh: float = Field(30.0, ge=0.1, le=2000, description="Battery capacity in MWh")
+    power_mw: float = Field(10.0, ge=0.1, le=1000, description="Battery power in MW")
+    capacity_mwh: float = Field(20.0, ge=0.1, le=2000, description="Battery capacity in MWh")
     round_trip_efficiency: float = Field(0.88, ge=0.5, le=1.0, description="Round-trip efficiency (0-1)")
+    soc_min: float = Field(0.10, ge=0.0, le=0.5, description="Minimum SOC (warranty floor)")
+    soc_max: float = Field(0.90, ge=0.5, le=1.0, description="Maximum SOC (warranty ceiling)")
+    soc_initial: float = Field(0.50, ge=0.0, le=1.0, description="SOC at start of each day")
     start_date: Optional[date] = Field(None, description="Start date for simulation")
     end_date: Optional[date] = Field(None, description="End date for simulation")
 

@@ -9,8 +9,10 @@ from app.models.fr import (
     FRSimulationParams,
     FRSimulationResponse,
     FRMonthlyResult,
+    FRMultiProductRequest,
+    FRMultiProductResponse,
 )
-from app.services.fr_service import FRService
+from app.services.fr_service import FRService, ROMANIAN_FR_PRODUCTS
 
 router = APIRouter()
 fr_service = FRService()
@@ -27,6 +29,30 @@ async def get_available_products():
             {"id": "mfrr_down", "name": "mFRR-", "description": "Manual Frequency Restoration Reserve (Down)"},
         ]
     }
+
+
+@router.get("/product-catalog")
+async def get_product_catalog():
+    """Phase E2: Romanian FR product catalogue with capacity prices, settlement
+    convention, and min-bid thresholds (pre/post MARI 2026-04-01)."""
+    return {"products": ROMANIAN_FR_PRODUCTS}
+
+
+@router.post("/multi-product", response_model=FRMultiProductResponse)
+async def run_multi_product(request: FRMultiProductRequest):
+    """Phase E1+E2: capacity vs activation revenue per product (aFRR/mFRR/FCR).
+
+    Honors Romanian min-bid rules and the April-2026 MARI threshold raise
+    (1 MW → 5 MW for aFRR / mFRR new entrants).
+    """
+    try:
+        return fr_service.compute_multi_product_revenue(request)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/data")

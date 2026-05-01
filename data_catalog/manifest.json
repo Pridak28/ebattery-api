@@ -1,0 +1,65 @@
+{
+  "datasets": [
+    {
+      "artifact_hash_sha256": "71df82da5c8fbae9677e48832c8d76d9fca08d0fa44de131d6a295ad00baf68f",
+      "artifact_path": "backend/data_catalog/processed/damas_clean.csv",
+      "bankability_level": "historical_backtest_only",
+      "confidence_label": "unverified_snapshot_not_settlement_proof",
+      "currency": "EUR",
+      "dataset_id": "damas_clean",
+      "generated_at_utc": "2026-05-01T21:39:43+00:00",
+      "manifest_schema_version": "battery_analytics_market_data_manifest_v1",
+      "max_delivery_date": "2026-05-01",
+      "min_delivery_date": "2024-01-05",
+      "pricing_basis": "historical_public_or_unverified_activation_snapshot",
+      "raw_hashes_sha256": {
+        "backend/data 2/damas_complete_fr_dataset.csv": "e577536322ee4bf3b3814e9e8bd11d1045690b557d5441074537c765c4a8b671"
+      },
+      "raw_paths": [
+        "backend/data 2/damas_complete_fr_dataset.csv"
+      ],
+      "retrieval_command": "python -m app.market_data.pipeline --sources seed-damas",
+      "row_count": 81408,
+      "schema_version": "damas_fr_v1_cleaned",
+      "source_kind": "unverified_snapshot",
+      "source_url": null,
+      "timezone": "Europe/Bucharest",
+      "transform_script": "backend/app/market_data/quality.py",
+      "warnings": [
+        "source_kind=unverified_snapshot is not participant settlement proof.",
+        "Found 74 rows with abs(price) > 2000.0 EUR/MWh."
+      ]
+    },
+    {
+      "artifact_hash_sha256": "99f4c4c8208f10d57215e79c670d00447dbee054141e5a5d50542c485fda2170",
+      "artifact_path": "backend/data_catalog/processed/pzu_history_3y.csv",
+      "bankability_level": "scenario_public_market_only",
+      "confidence_label": "public_market_report",
+      "currency": "EUR",
+      "dataset_id": "opcom_pzu",
+      "generated_at_utc": "2026-05-01T21:39:42+00:00",
+      "manifest_schema_version": "battery_analytics_market_data_manifest_v1",
+      "max_delivery_date": "2026-05-01",
+      "min_delivery_date": "2022-09-16",
+      "pricing_basis": "public_day_ahead_closing_price",
+      "raw_hashes_sha256": {
+        "backend/data 2/pzu_history_3y.csv": "c4a9447ea2312fe767e4956b6d6922860c90d9048e57cb65f38041880540ad50"
+      },
+      "raw_paths": [
+        "backend/data 2/pzu_history_3y.csv"
+      ],
+      "retrieval_command": "python -m app.market_data.pipeline --sources pzu",
+      "row_count": 31773,
+      "schema_version": "opcom_pzu_v2_resolution_explicit",
+      "source_kind": "public_observed_system",
+      "source_url": "https://www.opcom.ro/rapoarte-pzu-raportPIP-export-csv/",
+      "timezone": "Europe/Bucharest",
+      "transform_script": null,
+      "warnings": [
+        "source_kind=public_observed_system is not participant settlement proof."
+      ]
+    }
+  ],
+  "generated_at_utc": "2026-05-01T21:39:43+00:00",
+  "manifest_schema_version": "battery_analytics_market_data_manifest_v1"
+}

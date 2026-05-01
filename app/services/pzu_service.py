@@ -1,7 +1,14 @@
 """
 PZU (Day-Ahead Market) Service
 FIXED VERSION - Correct spread calculation using realistic buy/sell block prices
+
+Phase D1/D2 (gap audit 2026-05-01):
+- AC-side round-trip efficiency expressed as symmetric sqrt(eta) on charge AND
+  discharge via ``_charge_grid_input_mwh`` / ``_discharge_grid_output_mwh``.
+- Daily arbitrage rejects (charge_start, discharge_start) pairs whose SOC
+  trajectory leaves [soc_min, soc_max] (warranty-derived 10-90% default).
 """
+import math
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import date
@@ -9,6 +16,9 @@ import pandas as pd
 import numpy as np
 
 from app.config import settings
+from app.market_data.manifest import data_date_bounds
+from app.market_data.quality import infer_source_kind, normalize_pzu_resolution
+from app.market_data.schemas import bankability_level_for_source
 from app.models.pzu import (
     PZUSimulationParams,
     PZUSimulationResponse,
@@ -34,6 +44,7 @@ class PZUService:
     def __init__(self, data_dir: Optional[Path] = None):
         self.data_dir = data_dir or settings.DATA_DIR
         self._price_data: Optional[pd.DataFrame] = None
+        self._price_metadata: Dict[str, Any] = {}
 
     def _load_price_data(self) -> pd.DataFrame:
         """Load PZU price history from CSV"""
@@ -42,8 +53,8 @@ class PZUService:
 
         # Try different file names
         possible_files = [
-            "pzu_history.csv",
             "pzu_history_3y.csv",
+            "pzu_history.csv",
             "pzu_history_2y.csv",
             "pzu_history_1y.csv",
         ]
@@ -52,10 +63,32 @@ class PZUService:
             filepath = self.data_dir / filename
             if filepath.exists():
                 df = pd.read_csv(filepath, parse_dates=["date"])
+                df = normalize_pzu_resolution(df)
+                if "date" in df.columns:
+                    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+                source_kind = infer_source_kind(df, filepath)
+                df.attrs["source_kind"] = source_kind
+                self._price_metadata = self._build_data_metadata(df, filepath)
                 self._price_data = df
                 return df
 
         raise FileNotFoundError(f"No PZU price data found in {self.data_dir}")
+
+    def _build_data_metadata(self, df: pd.DataFrame, filepath: Optional[Path] = None) -> Dict[str, Any]:
+        source_kind = infer_source_kind(df, filepath)
+        min_date, max_date = data_date_bounds(df)
+        resolutions = []
+        if "resolution_minutes" in df.columns:
+            resolutions = sorted(pd.to_numeric(df["resolution_minutes"], errors="coerce").dropna().astype(int).unique().tolist())
+        return {
+            "source_kind": source_kind,
+            "data_date_min": min_date,
+            "data_date_max": max_date,
+            "bankability_level": bankability_level_for_source(source_kind),
+            "settlement_grade": False,
+            "source_file": str(filepath) if filepath else None,
+            "resolution_minutes": resolutions,
+        }
 
     def get_price_history(
         self,
@@ -109,60 +142,232 @@ class PZUService:
             max_price=float(agg_df[price_col].max()),
         )
 
+    @staticmethod
+    def _charge_grid_input_mwh(internal_mwh: float, eta: float) -> float:
+        """Phase D1: grid energy needed to push ``internal_mwh`` into the battery.
+
+        AC-side losses on the charge leg are sqrt(eta), so the grid pays
+        ``internal / sqrt(eta)``.
+        """
+        if eta <= 0:
+            return float("inf")
+        return float(internal_mwh) / math.sqrt(float(eta))
+
+    @staticmethod
+    def _discharge_grid_output_mwh(internal_mwh: float, eta: float) -> float:
+        """Phase D1: grid energy delivered when discharging ``internal_mwh``.
+
+        AC-side losses on the discharge leg are sqrt(eta), so the grid
+        receives ``internal × sqrt(eta)``.
+        """
+        if eta <= 0:
+            return 0.0
+        return float(internal_mwh) * math.sqrt(float(eta))
+
+    @staticmethod
+    def _simulate_soc_trajectory(
+        cs: int,
+        ds: int,
+        block: int,
+        capacity_mwh: float,
+        internal_charge_mwh: float,
+        internal_discharge_mwh: float,
+        soc_initial: float,
+    ) -> List[float]:
+        """Phase D2: 24-hour SOC vector (fraction of capacity) for a candidate
+        ``(charge_start, discharge_start)`` plan.
+
+        Charge enters battery linearly across [cs, cs+block); discharge leaves
+        linearly across [ds, ds+block). All energies are battery-internal
+        (SOC-side) so the AC-AC losses are already accounted for in the caller.
+        """
+        traj = [float(soc_initial)] * 25  # SOC at hour boundaries 0..24
+        if capacity_mwh <= 0:
+            return traj
+        charge_per_hour = internal_charge_mwh / block
+        discharge_per_hour = internal_discharge_mwh / block
+        soc_mwh = float(soc_initial) * float(capacity_mwh)
+        for h in range(24):
+            if cs <= h < cs + block:
+                soc_mwh += charge_per_hour
+            elif ds <= h < ds + block:
+                soc_mwh -= discharge_per_hour
+            traj[h + 1] = soc_mwh / float(capacity_mwh)
+        return traj
+
     def _compute_daily_arbitrage(
         self,
         daily_prices: pd.DataFrame,
         power_mw: float,
         capacity_mwh: float,
         efficiency: float,
+        soc_min: float = 0.10,
+        soc_max: float = 0.90,
+        soc_initial: float = 0.50,
     ) -> Dict[str, Any]:
         """
-        Compute arbitrage profit for a single day.
-        
-        FIXED: Now calculates realistic spread using average of best buy/sell hours
-        instead of absolute min/max prices.
+        Compute arbitrage profit for a single day using a CHRONOLOGICAL
+        SOC-aware dispatch with **symmetric AC-side RTE** and **SOC bounds**.
+
+        Audit fix (Agent 1, Critical): chronological constraint
+        (charge_start + BLOCK_HOURS <= discharge_start).
+
+        Phase D1 (gap audit 2026-05-01): RTE applied as sqrt(eta) on charge
+        AND sqrt(eta) on discharge so the round-trip preserves eta and the
+        math is symmetric on the two AC legs.
+
+        Phase D2: any (cs, ds) pair whose SOC trajectory leaves
+        ``[soc_min, soc_max]`` is rejected. Default 10–90 % matches the
+        warranty operating window for new Li-ion BESS.
         """
         if len(daily_prices) < self.MIN_REQUIRED_HOURS:
             return None
 
-        prices = daily_prices["price"].values if "price" in daily_prices.columns else daily_prices.iloc[:, 1].values
+        # Build an hour-indexed price vector. The CSV has one row per
+        # (date, hour) so we sort by hour to make sure ``prices[h]`` is the
+        # actual price at hour ``h``.
+        df = daily_prices
+        if "hour" in df.columns:
+            df = df.sort_values("hour")
+            hours = df["hour"].astype(int).values
+        else:
+            hours = np.arange(len(df))
 
-        # Sort prices to find best buy and sell blocks
-        sorted_prices = np.sort(prices)
-        
-        # Best buy hours = lowest N hours (where N = BLOCK_HOURS)
-        # Best sell hours = highest N hours
-        # This is more realistic than using absolute min/max
-        avg_buy_price = float(np.mean(sorted_prices[:self.BLOCK_HOURS]))
-        avg_sell_price = float(np.mean(sorted_prices[-self.BLOCK_HOURS:]))
-        
-        # CORRECT SPREAD = difference between avg sell and avg buy prices
-        spread = avg_sell_price - avg_buy_price
-        
-        # Keep min/max for reference
-        min_price = float(np.min(prices))
-        max_price = float(np.max(prices))
+        if "price" in df.columns:
+            price_series = df["price"].values
+        else:
+            price_series = df.iloc[:, 1].values
 
-        # Calculate cycles possible (limited by capacity and power)
-        max_cycles = capacity_mwh / (power_mw * self.BLOCK_HOURS)
-        cycles = min(max_cycles, 1.0)  # Simplified: max 1 full cycle per day
+        # Map prices into a 24-slot array; missing hours stay as NaN and
+        # any window touching them is rejected.
+        prices = np.full(24, np.nan, dtype=float)
+        for h, p in zip(hours, price_series):
+            if 0 <= int(h) < 24:
+                prices[int(h)] = float(p)
 
-        # Calculate profit using realistic block prices
-        energy_per_cycle = power_mw * self.BLOCK_HOURS
-        charge_cost = energy_per_cycle * avg_buy_price
-        discharge_revenue = energy_per_cycle * efficiency * avg_sell_price
-        gross_profit = (discharge_revenue - charge_cost) * cycles
-        net_profit = gross_profit  # Energy cost already factored in
+        block = self.BLOCK_HOURS
+        if block <= 0:
+            return None
+
+        usable_capacity_mwh = float(capacity_mwh) * (float(soc_max) - float(soc_initial))
+        # Internal energy stored after charging at rated power for `block` hours.
+        # Limited by (a) how much the AC side can push in given sqrt(eta) losses
+        # and (b) the usable SOC headroom from soc_initial up to soc_max.
+        ac_in_capable = power_mw * block * math.sqrt(efficiency)
+        internal_charge_mwh = float(min(ac_in_capable, max(usable_capacity_mwh, 0.0)))
+        # Discharge: at most what's stored, capped by AC delivery rating.
+        ac_out_capable = power_mw * block
+        internal_discharge_mwh = float(min(internal_charge_mwh, ac_out_capable / math.sqrt(efficiency)))
+
+        # Grid-side spend / receive (driven by the AC-side losses).
+        charge_grid_mwh = self._charge_grid_input_mwh(internal_charge_mwh, efficiency)
+        discharge_grid_mwh = self._discharge_grid_output_mwh(internal_discharge_mwh, efficiency)
+
+        min_price = float(np.nanmin(prices)) if np.any(~np.isnan(prices)) else 0.0
+        max_price = float(np.nanmax(prices)) if np.any(~np.isnan(prices)) else 0.0
+
+        best_profit = 0.0
+        best_buy_avg = 0.0
+        best_sell_avg = 0.0
+        best_charge_start: Optional[int] = None
+        best_discharge_start: Optional[int] = None
+        best_soc_traj: Optional[List[float]] = None
+        soc_violations = 0
+
+        # Brute-force all feasible (charge_start, discharge_start) pairs.
+        # 24*24 = 576 candidates per day — trivial perf-wise.
+        for cs in range(0, 24 - block + 1):
+            charge_window = prices[cs:cs + block]
+            if np.any(np.isnan(charge_window)):
+                continue
+            buy_avg = float(charge_window.mean())
+            charge_cost = buy_avg * charge_grid_mwh
+
+            # Discharge must START strictly AFTER the charge window ends.
+            for ds in range(cs + block, 24 - block + 1):
+                discharge_window = prices[ds:ds + block]
+                if np.any(np.isnan(discharge_window)):
+                    continue
+
+                # Phase D2 SOC-bound check on the candidate trajectory.
+                traj = self._simulate_soc_trajectory(
+                    cs, ds, block,
+                    capacity_mwh,
+                    internal_charge_mwh,
+                    internal_discharge_mwh,
+                    soc_initial,
+                )
+                # Add small floating tolerance.
+                tol = 1e-6
+                if any(s < soc_min - tol or s > soc_max + tol for s in traj):
+                    soc_violations += 1
+                    continue
+
+                sell_avg = float(discharge_window.mean())
+                discharge_revenue = sell_avg * discharge_grid_mwh
+                profit = discharge_revenue - charge_cost
+
+                if profit > best_profit:
+                    best_profit = profit
+                    best_buy_avg = buy_avg
+                    best_sell_avg = sell_avg
+                    best_charge_start = cs
+                    best_discharge_start = ds
+                    best_soc_traj = traj
+
+        # If no profitable chronological pair exists, return a zero-trade
+        # day rather than forcing a loss.
+        if best_charge_start is None or best_profit <= 0.0:
+            return {
+                "avg_buy_price": 0.0,
+                "avg_sell_price": 0.0,
+                "min_price": min_price,
+                "max_price": max_price,
+                "spread": 0.0,
+                "cycles": 0.0,
+                "gross_profit": 0.0,
+                "net_profit": 0.0,
+                "charge_start_hour": None,
+                "discharge_start_hour": None,
+                "pricing_basis": "public_marginal",
+                "confidence_label": "Public-data / Participant-only-for-bankability",
+                "dispatch_method": "chronological_soc",
+                "internal_charge_mwh": float(internal_charge_mwh),
+                "internal_discharge_mwh": float(internal_discharge_mwh),
+                "charge_grid_mwh": float(charge_grid_mwh),
+                "discharge_grid_mwh": float(discharge_grid_mwh),
+                "soc_min": float(soc_min),
+                "soc_max": float(soc_max),
+                "soc_violations": int(soc_violations),
+                "soc_trajectory": None,
+            }
+
+        spread = best_sell_avg - best_buy_avg
+        # Cycles tracked from internal energy (the warranty-relevant quantity).
+        cycles = float(internal_charge_mwh / capacity_mwh) if capacity_mwh > 0 else 0.0
 
         return {
-            "avg_buy_price": avg_buy_price,
-            "avg_sell_price": avg_sell_price,
+            "avg_buy_price": best_buy_avg,
+            "avg_sell_price": best_sell_avg,
             "min_price": min_price,
             "max_price": max_price,
-            "spread": spread,  # Now this is the realistic achievable spread
+            "spread": spread,
             "cycles": cycles,
-            "gross_profit": gross_profit,
-            "net_profit": net_profit,
+            "gross_profit": best_profit,
+            "net_profit": best_profit,
+            "charge_start_hour": int(best_charge_start),
+            "discharge_start_hour": int(best_discharge_start),
+            "pricing_basis": "public_marginal",
+            "confidence_label": "Public-data / Participant-only-for-bankability",
+            "dispatch_method": "chronological_soc",
+            "internal_charge_mwh": float(internal_charge_mwh),
+            "internal_discharge_mwh": float(internal_discharge_mwh),
+            "charge_grid_mwh": float(charge_grid_mwh),
+            "discharge_grid_mwh": float(discharge_grid_mwh),
+            "soc_min": float(soc_min),
+            "soc_max": float(soc_max),
+            "soc_violations": int(soc_violations),
+            "soc_trajectory": best_soc_traj,
         }
 
     def simulate(self, params: PZUSimulationParams) -> PZUSimulationResponse:
@@ -186,6 +391,9 @@ class PZUService:
                 params.power_mw,
                 params.capacity_mwh,
                 params.round_trip_efficiency,
+                soc_min=params.soc_min,
+                soc_max=params.soc_max,
+                soc_initial=params.soc_initial,
             )
             if result:
                 result["date"] = date_val
@@ -252,6 +460,7 @@ class PZUService:
                 "max": float(df[price_col].max()),
                 "std": float(df[price_col].std()),
             },
+            "data_metadata": self._build_data_metadata(df, Path(self._price_metadata.get("source_file")) if self._price_metadata.get("source_file") else None),
         }
 
     def get_typical_day(self) -> PZUTypicalDayResponse:
@@ -433,9 +642,15 @@ class PZUService:
         month: str,  # Format: "2024-01"
         power_mw: float = 15.0,
         capacity_mwh: float = 30.0,
-        efficiency: float = 0.90,
+        efficiency: float = 0.88,
     ) -> dict:
-        """Get daily breakdown for a specific month"""
+        """Get daily breakdown for a specific month.
+
+        Default ``efficiency`` aligned to ``settings.DEFAULT_RTE_AC_AC`` (0.88).
+        Note: this screening helper picks the cheapest/most-expensive ``BLOCK_HOURS``
+        of the day without enforcing chronological order; use ``simulate()`` for
+        bankable revenue numbers (Phase D2 SOC-aware dispatch).
+        """
         df = self._load_price_data()
         
         # Parse month and filter

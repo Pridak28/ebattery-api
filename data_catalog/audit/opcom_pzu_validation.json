@@ -1,0 +1,17 @@
+{
+  "bankability_level": "scenario_public_market_only",
+  "dataset_id": "opcom_pzu",
+  "issues": [
+    {
+      "code": "not_settlement_grade",
+      "message": "source_kind=public_observed_system is not participant settlement proof.",
+      "severity": "INFO",
+      "source_kind": "public_observed_system"
+    }
+  ],
+  "max_delivery_date": "2026-05-01",
+  "min_delivery_date": "2022-09-16",
+  "passed": true,
+  "row_count": 31773,
+  "source_kind": "public_observed_system"
+}
