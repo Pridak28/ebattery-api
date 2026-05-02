@@ -66,7 +66,7 @@ add_targeted_task() {
   fi
   add_if_missing "$id" "$title" "$role"
   SMART_ADDED=$(( ${SMART_ADDED:-0} + 1 ))
-  printf -- "- added `%s` role `%s`: %s\n  evidence: %s\n" "$id" "$role" "$title" "$evidence" >> "$report"
+  printf -- '- added `%s` role `%s`: %s\n  evidence: %s\n' "$id" "$role" "$title" "$evidence" >> "$report"
 }
 
 recent_result_summary() {
