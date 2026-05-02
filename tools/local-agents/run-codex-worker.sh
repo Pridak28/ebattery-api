@@ -133,6 +133,16 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 # ---- record verdict ----
+# Token-exhaustion detection: if the CLI failed AND the log shows rate-limit
+# patterns, mark this agent exhausted and RELEASE the task (instead of
+# rejecting) so the other agent can claim it next iteration.
+if [ "$EXIT_CODE" -ne 0 ] && detect_exhaustion "$LOG_FILE" "$AGENT"; then
+  warn "Token exhaustion detected for $AGENT — releasing $TASK_ID for failover."
+  "$LIB_SH_DIR/agent-board.sh" release "$TASK_ID" "$AGENT" >/dev/null 2>&1 || true
+  trap - EXIT
+  exit 75   # 75 = EX_TEMPFAIL
+fi
+
 if [ "$EXIT_CODE" -ne 0 ]; then
   "$LIB_SH_DIR/agent-board.sh" result-reject "$TASK_ID" "$AGENT" "$BRANCH" "codex_cli_failed_exit_$EXIT_CODE"
 elif [ "$VALIDATION_OK" -eq 0 ]; then

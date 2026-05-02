@@ -121,6 +121,14 @@ if [ -n "$(git status --porcelain)" ]; then
   git commit -m "$AGENT/$TASK_ID: $TASK_TITLE" 2>&1 | tail -3 || true
 fi
 
+# Token-exhaustion detection (failover trigger).
+if [ "$EXIT_CODE" -ne 0 ] && detect_exhaustion "$LOG_FILE" "$AGENT"; then
+  warn "Token exhaustion detected for $AGENT — releasing $TASK_ID for failover."
+  "$LIB_SH_DIR/agent-board.sh" release "$TASK_ID" "$AGENT" >/dev/null 2>&1 || true
+  trap - EXIT
+  exit 75   # 75 = EX_TEMPFAIL
+fi
+
 if [ "$EXIT_CODE" -ne 0 ]; then
   "$LIB_SH_DIR/agent-board.sh" result-reject "$TASK_ID" "$AGENT" "$BRANCH" "claude_cli_failed_exit_$EXIT_CODE"
 elif [ "$VALIDATION_OK" -eq 0 ]; then

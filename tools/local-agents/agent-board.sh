@@ -63,6 +63,15 @@ JSON
       [ -z "$f" ] && continue
       echo "    $(basename "$f"): $(jq -r '.verdict + " by " + .agent + " — " + .reason' "$f" 2>/dev/null || echo '(parse error)')"
     done
+    echo ""
+    echo "  Exhaustion markers (active rate-limit failover):"
+    if ls "$EXHAUSTION_DIR"/*.json >/dev/null 2>&1; then
+      for f in "$EXHAUSTION_DIR"/*.json; do
+        echo "    $(jq -r '.agent + " until reset_after=" + (.reset_after_seconds|tostring) + "s from " + .exhausted_at_utc' "$f")"
+      done
+    else
+      echo "    (none — both agents eligible)"
+    fi
     echo "════════════════════════════════════════════════════════"
     ;;
 
@@ -162,6 +171,23 @@ JSON
     ok "Recorded $verdict for $id by $agent at $rfile"
     ;;
 
+  exhaustion)
+    # exhaustion list / clear-claude / clear-codex
+    sub="${1:-list}"
+    case "$sub" in
+      list)
+        if ls "$EXHAUSTION_DIR"/*.json >/dev/null 2>&1; then
+          for f in "$EXHAUSTION_DIR"/*.json; do
+            jq -r '"\(.agent): exhausted_at=\(.exhausted_at_utc) reason=\(.reason) reset_after_s=\(.reset_after_seconds)"' "$f"
+          done
+        else
+          echo "(no exhaustion markers — both agents eligible)"
+        fi ;;
+      clear-claude) clear_exhausted claude; ok "Cleared claude exhaustion marker." ;;
+      clear-codex)  clear_exhausted codex;  ok "Cleared codex exhaustion marker." ;;
+      *) err "Unknown exhaustion subcommand: $sub (expected: list|clear-claude|clear-codex)"; exit 1 ;;
+    esac ;;
+
   *)
     err "Unknown command: $cmd"
     cat <<HELP
@@ -177,6 +203,9 @@ Commands:
   result-accept <id> <agent> <branch> <reason>
   result-reject <id> <agent> <branch> <reason>
   result-needs-review <id> <agent> <branch> <reason>
+  exhaustion list                            show current rate-limit markers
+  exhaustion clear-claude                    clear Claude rate-limit marker
+  exhaustion clear-codex                     clear Codex rate-limit marker
 
 Paths:
   tasks:    $TASKS_FILE

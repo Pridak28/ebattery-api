@@ -61,20 +61,40 @@ while [ "$(date +%s)" -lt "$END" ]; do
   ITER=$((ITER + 1))
   log "--- iteration $ITER ---"
 
-  # Each iteration: try one Codex worker, then one Claude worker. Either may
-  # exit immediately if no task is available; that's OK.
-  if command -v codex >/dev/null 2>&1; then
-    bash "$LIB_SH_DIR/run-codex-worker.sh" || warn "codex worker iteration failed"
-  else
+  # Failover-aware: skip an agent that's marked exhausted; if BOTH exhausted
+  # sleep until the soonest one resets.
+  CODEX_OK=1; CLAUDE_OK=1
+  if is_exhausted codex;  then warn "codex is rate-limited; skipping this iteration."; CODEX_OK=0; fi
+  if is_exhausted claude; then warn "claude is rate-limited; skipping this iteration."; CLAUDE_OK=0; fi
+
+  if [ "$CODEX_OK" = "0" ] && [ "$CLAUDE_OK" = "0" ]; then
+    warn "Both agents exhausted — sleeping 300s before re-checking markers."
+    sleep 300
+    continue
+  fi
+
+  if [ "$CODEX_OK" = "1" ] && command -v codex >/dev/null 2>&1; then
+    bash "$LIB_SH_DIR/run-codex-worker.sh"; rc=$?
+    if [ "$rc" = "75" ]; then
+      warn "codex hit token exhaustion this iteration; failover engaged."
+    elif [ "$rc" -ne 0 ]; then
+      warn "codex worker iteration returned $rc (non-fatal)"
+    fi
+  elif [ "$CODEX_OK" = "1" ]; then
     warn "codex CLI not installed — skipping codex worker"
   fi
 
   # Refresh time check between agents
   [ "$(date +%s)" -ge "$END" ] && break
 
-  if command -v claude >/dev/null 2>&1; then
-    bash "$LIB_SH_DIR/run-claude-worker.sh" || warn "claude worker iteration failed"
-  else
+  if [ "$CLAUDE_OK" = "1" ] && command -v claude >/dev/null 2>&1; then
+    bash "$LIB_SH_DIR/run-claude-worker.sh"; rc=$?
+    if [ "$rc" = "75" ]; then
+      warn "claude hit token exhaustion this iteration; failover engaged."
+    elif [ "$rc" -ne 0 ]; then
+      warn "claude worker iteration returned $rc (non-fatal)"
+    fi
+  elif [ "$CLAUDE_OK" = "1" ]; then
     warn "claude CLI not installed — skipping claude worker"
   fi
 
