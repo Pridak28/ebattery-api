@@ -1,0 +1,66 @@
+name: Codex Auto Improve
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  codex-auto-improve:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Run Codex improvement pass
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+          prompt: |
+            You are improving battery-analytics-pro.
+
+            Work as a senior full-stack engineer and BESS analytics product reviewer.
+
+            Rules:
+            - Do not deploy.
+            - Do not push directly to main.
+            - Make only safe, reviewable changes.
+            - Do not delete important files.
+            - Fix concrete issues only.
+            - Improve the app only where clearly beneficial.
+
+            Tasks:
+            1. Inspect the project structure.
+            2. Identify build/runtime/type/import/lint errors.
+            3. Fix small concrete problems.
+            4. Improve UI/UX where obvious.
+            5. Review BESS analytics, arbitrage, revenue, charts, and financial assumptions for obvious weaknesses.
+            6. Add or improve tests if the project supports it.
+            7. Run available install, lint, test, and build commands.
+            8. Leave the repository in a working state.
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: codex/auto-improve
+          commit-message: "codex: auto-improvement pass"
+          title: "Codex auto-improvement pass"
+          body: |
+            Automated Codex improvement pass.
+
+            Review carefully before merging.
+
+            Codex was instructed to:
+            - fix build/runtime issues
+            - improve UI/UX
+            - review BESS analytics logic
+            - avoid deployment
+            - avoid direct changes to main
+          delete-branch: true

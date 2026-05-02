@@ -1,0 +1,223 @@
+{
+    "params": {
+        "capacity_mwh": 30.0,
+        "round_trip_efficiency": 0.9,
+        "afrr_up": {
+            "enabled": true,
+            "power_mw": 15.0,
+            "capacity_price_eur_mw_h": 25.0,
+            "activation_rate": 0.1
+        },
+        "afrr_down": {
+            "enabled": true,
+            "power_mw": 15.0,
+            "capacity_price_eur_mw_h": 20.0,
+            "activation_rate": 0.1
+        },
+        "mfrr_up": {
+            "enabled": false,
+            "power_mw": 0.0,
+            "capacity_price_eur_mw_h": 15.0,
+            "activation_rate": 0.1
+        },
+        "mfrr_down": {
+            "enabled": false,
+            "power_mw": 0.0,
+            "capacity_price_eur_mw_h": 15.0,
+            "activation_rate": 0.1
+        },
+        "energy_cost_eur_mwh": 80.0,
+        "start_date": "2024-07-01",
+        "end_date": "2024-12-31"
+    },
+    "monthly_results": [
+        {
+            "month": "2024-07",
+            "product": "aFRR+",
+            "total_slots": 2976,
+            "capacity_revenue_eur": 279000.0,
+            "activation_revenue_eur": 170080.51936528747,
+            "total_revenue_eur": 449080.5193652875,
+            "activation_energy_mwh": 900.0,
+            "energy_cost_eur": 80000.0,
+            "net_profit_eur": 369080.5193652875,
+            "avg_capacity_price_eur_mw": 25.0,
+            "avg_activation_price_eur_mwh": 188.97835485031942
+        },
+        {
+            "month": "2024-07",
+            "product": "aFRR-",
+            "total_slots": 2976,
+            "capacity_revenue_eur": 223200.0,
+            "activation_revenue_eur": 0.0,
+            "total_revenue_eur": 223200.0,
+            "activation_energy_mwh": 0.0,
+            "energy_cost_eur": 0.0,
+            "net_profit_eur": 223200.0,
+            "avg_capacity_price_eur_mw": 20.0,
+            "avg_activation_price_eur_mwh": -16.17993087513161
+        },
+        {
+            "month": "2024-08",
+            "product": "aFRR+",
+            "total_slots": 2976,
+            "capacity_revenue_eur": 279000.0,
+            "activation_revenue_eur": 174589.00105375372,
+            "total_revenue_eur": 453589.0010537537,
+            "activation_energy_mwh": 900.0,
+            "energy_cost_eur": 80000.0,
+            "net_profit_eur": 373589.0010537537,
+            "avg_capacity_price_eur_mw": 25.0,
+            "avg_activation_price_eur_mwh": 193.98777894861524
+        },
+        {
+            "month": "2024-08",
+            "product": "aFRR-",
+            "total_slots": 2976,
+            "capacity_revenue_eur": 223200.0,
+            "activation_revenue_eur": 0.0,
+            "total_revenue_eur": 223200.0,
+            "activation_energy_mwh": 0.0,
+            "energy_cost_eur": 0.0,
+            "net_profit_eur": 223200.0,
+            "avg_capacity_price_eur_mw": 20.0,
+            "avg_activation_price_eur_mwh": -10.301444740694254
+        },
+        {
+            "month": "2024-09",
+            "product": "aFRR+",
+            "total_slots": 2880,
+            "capacity_revenue_eur": 270000.0,
+            "activation_revenue_eur": 157082.65230619648,
+            "total_revenue_eur": 427082.6523061965,
+            "activation_energy_mwh": 900.0,
+            "energy_cost_eur": 80000.0,
+            "net_profit_eur": 347082.6523061965,
+            "avg_capacity_price_eur_mw": 25.0,
+            "avg_activation_price_eur_mwh": 174.53628034021833
+        },
+        {
+            "month": "2024-09",
+            "product": "aFRR-",
+            "total_slots": 2880,
+            "capacity_revenue_eur": 216000.0,
+            "activation_revenue_eur": 0.0,
+            "total_revenue_eur": 216000.0,
+            "activation_energy_mwh": 0.0,
+            "energy_cost_eur": 0.0,
+            "net_profit_eur": 216000.0,
+            "avg_capacity_price_eur_mw": 20.0,
+            "avg_activation_price_eur_mwh": -14.158882688837528
+        },
+        {
+            "month": "2024-10",
+            "product": "aFRR+",
+            "total_slots": 3004,
+            "capacity_revenue_eur": 281625.0,
+            "activation_revenue_eur": 147653.8826395049,
+            "total_revenue_eur": 429278.8826395049,
+            "activation_energy_mwh": 900.0,
+            "energy_cost_eur": 80000.0,
+            "net_profit_eur": 349278.8826395049,
+            "avg_capacity_price_eur_mw": 25.0,
+            "avg_activation_price_eur_mwh": 164.0598695994499
+        },
+        {
+            "month": "2024-10",
+            "product": "aFRR-",
+            "total_slots": 3004,
+            "capacity_revenue_eur": 225300.0,
+            "activation_revenue_eur": 0.0,
+            "total_revenue_eur": 225300.0,
+            "activation_energy_mwh": 0.0,
+            "energy_cost_eur": 0.0,
+            "net_profit_eur": 225300.0,
+            "avg_capacity_price_eur_mw": 20.0,
+            "avg_activation_price_eur_mwh": -14.356467858389706
+        },
+        {
+            "month": "2024-11",
+            "product": "aFRR+",
+            "total_slots": 2880,
+            "capacity_revenue_eur": 270000.0,
+            "activation_revenue_eur": 171007.79384622505,
+            "total_revenue_eur": 441007.793846225,
+            "activation_energy_mwh": 900.0,
+            "energy_cost_eur": 80000.0,
+            "net_profit_eur": 361007.793846225,
+            "avg_capacity_price_eur_mw": 25.0,
+            "avg_activation_price_eur_mwh": 190.00865982913894
+        },
+        {
+            "month": "2024-11",
+            "product": "aFRR-",
+            "total_slots": 2880,
+            "capacity_revenue_eur": 216000.0,
+            "activation_revenue_eur": 0.0,
+            "total_revenue_eur": 216000.0,
+            "activation_energy_mwh": 0.0,
+            "energy_cost_eur": 0.0,
+            "net_profit_eur": 216000.0,
+            "avg_capacity_price_eur_mw": 20.0,
+            "avg_activation_price_eur_mwh": 1.631918901978259
+        },
+        {
+            "month": "2024-12",
+            "product": "aFRR+",
+            "total_slots": 2976,
+            "capacity_revenue_eur": 279000.0,
+            "activation_revenue_eur": 143206.16801048449,
+            "total_revenue_eur": 422206.1680104845,
+            "activation_energy_mwh": 900.0,
+            "energy_cost_eur": 80000.0,
+            "net_profit_eur": 342206.1680104845,
+            "avg_capacity_price_eur_mw": 25.0,
+            "avg_activation_price_eur_mwh": 159.11796445609386
+        },
+        {
+            "month": "2024-12",
+            "product": "aFRR-",
+            "total_slots": 2976,
+            "capacity_revenue_eur": 223200.0,
+            "activation_revenue_eur": 0.0,
+            "total_revenue_eur": 223200.0,
+            "activation_energy_mwh": 0.0,
+            "energy_cost_eur": 0.0,
+            "net_profit_eur": 223200.0,
+            "avg_capacity_price_eur_mw": 20.0,
+            "avg_activation_price_eur_mwh": 4.908134238156164
+        }
+    ],
+    "product_summaries": [
+        {
+            "product": "aFRR+",
+            "total_capacity_revenue_eur": 1658625.0,
+            "total_activation_revenue_eur": 963620.0172214521,
+            "total_revenue_eur": 2622245.017221452,
+            "total_energy_cost_eur": 480000.0,
+            "total_net_profit_eur": 2142245.017221452,
+            "months_count": 6
+        },
+        {
+            "product": "aFRR-",
+            "total_capacity_revenue_eur": 1326900.0,
+            "total_activation_revenue_eur": 0.0,
+            "total_revenue_eur": 1326900.0,
+            "total_energy_cost_eur": 0.0,
+            "total_net_profit_eur": 1326900.0,
+            "months_count": 6
+        }
+    ],
+    "total_revenue_eur": 3949145.017221452,
+    "total_energy_cost_eur": 480000.0,
+    "total_net_profit_eur": 3469145.017221452,
+    "total_capacity_revenue_eur": 2985525.0,
+    "total_activation_revenue_eur": 963620.0172214521,
+    "avg_monthly_net_profit_eur": 578190.8362035754,
+    "annual_net_profit_eur": 6938290.034442904,
+    "annual_revenue_eur": 7898290.034442904,
+    "annual_capacity_revenue_eur": 5971050.0,
+    "annual_activation_revenue_eur": 1927240.0344429042,
+    "annual_energy_cost_eur": 960000.0,
+    "months_count": 6
+}

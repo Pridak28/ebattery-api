@@ -1,0 +1,25 @@
+{
+    "date": "2024-12-03",
+    "target_acceptance_rate": 0.9,
+    "lookback_period_days": 90,
+    "historical_data_points": 17404,
+    "optimal_bids": {
+        "afrr_up": {
+            "recommended_capacity_bid": 25.19,
+            "based_on_activation_price": 119.95,
+            "expected_acceptance_rate": 0.9,
+            "estimated_daily_revenue": 11759.47,
+            "capacity_component": 8161.1,
+            "activation_component": 3598.37
+        },
+        "afrr_down": {
+            "recommended_capacity_bid": 10,
+            "based_on_activation_price": -0.59,
+            "expected_acceptance_rate": 0.9,
+            "estimated_daily_revenue": 3257.85,
+            "capacity_component": 3240.0,
+            "activation_component": 17.85
+        }
+    },
+    "recommendation": "aFRR+"
+}

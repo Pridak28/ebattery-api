@@ -1,0 +1,72 @@
+{
+    "analysis_period": {
+        "start_date": "2024-07-01",
+        "end_date": "2024-12-31",
+        "total_days": 184
+    },
+    "afrr_up": {
+        "avg_price": 178.68,
+        "percentiles": {
+            "p20": 137.67,
+            "p50": 172.8,
+            "p70": 183.64,
+            "p80": 198.59,
+            "p90": 236.74
+        },
+        "total_activations_mwh": 116630.45
+    },
+    "afrr_down": {
+        "avg_price": -8.99,
+        "percentiles": {
+            "p20": 0.85,
+            "p50": 4.2,
+            "p70": 8.0,
+            "p80": 9.0,
+            "p90": 14.52
+        },
+        "total_activations_mwh": 111537.82,
+        "negative_price_percentage": 12.5
+    },
+    "profitability_comparison": {
+        "ratio": 19.87,
+        "recommendation": "aFRR+ is significantly more profitable. Focus on UP regulation."
+    },
+    "seasonal_patterns": [
+        {
+            "month": 7,
+            "month_name": "July",
+            "afrr_up_avg": 153.56,
+            "afrr_down_avg": -16.12
+        },
+        {
+            "month": 8,
+            "month_name": "August",
+            "afrr_up_avg": 136.96,
+            "afrr_down_avg": -10.15
+        },
+        {
+            "month": 9,
+            "month_name": "September",
+            "afrr_up_avg": 172.72,
+            "afrr_down_avg": -70.57
+        },
+        {
+            "month": 10,
+            "month_name": "October",
+            "afrr_up_avg": 179.53,
+            "afrr_down_avg": -78.57
+        },
+        {
+            "month": 11,
+            "month_name": "November",
+            "afrr_up_avg": 258.01,
+            "afrr_down_avg": -11.64
+        },
+        {
+            "month": 12,
+            "month_name": "December",
+            "afrr_up_avg": 188.61,
+            "afrr_down_avg": -21.76
+        }
+    ]
+}

@@ -1,0 +1,19 @@
+# FastAPI Backend Dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Data Processing
+pandas>=2.1.0
+numpy>=1.26.0
+
+# CORS and HTTP
+python-multipart>=0.0.6
+
+# Development
+python-dotenv>=1.0.0
+
+# HTTP clients and retries
+requests>=2.31.0
+tenacity>=8.4.0

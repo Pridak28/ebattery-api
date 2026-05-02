@@ -1,0 +1,43 @@
+{
+    "target_acceptance_rate": 0.9,
+    "safe_bids": {
+        "afrr_up": {
+            "capacity_bid": 19.29,
+            "activation_bid": 94.11,
+            "vs_market_avg": -46.9,
+            "percentile": 10.0
+        },
+        "afrr_down": {
+            "capacity_bid": 27.16,
+            "activation_bid": -132.48
+        }
+    },
+    "expected_revenue": {
+        "monthly": 268001.59,
+        "annual": 3216019.05,
+        "capacity_component": 2250400.18,
+        "activation_component": 965618.87
+    },
+    "comparison": {
+        "safe_strategy": {
+            "acceptance_rate": 0.9,
+            "annual_revenue": 3216019.05,
+            "utilization": "95%"
+        },
+        "aggressive_strategy": {
+            "acceptance_rate": 0.6,
+            "annual_revenue": 3821541.12,
+            "utilization": "65%"
+        },
+        "advantage": {
+            "additional_revenue_eur": -605522.07,
+            "advantage_percentage": -15.8
+        }
+    },
+    "market_context": {
+        "avg_activation_price": 177.27,
+        "median_activation_price": 166.48,
+        "your_safe_bid": 94.11,
+        "interpretation": "Bidding at 94.11 EUR/MWh (vs market avg 177.27) gives 90% acceptance probability"
+    }
+}

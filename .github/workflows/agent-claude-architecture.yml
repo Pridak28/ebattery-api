@@ -1,0 +1,98 @@
+name: Agent Claude Architecture
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "55 */6 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+concurrency:
+  group: agent-claude-architecture
+  cancel-in-progress: true
+
+jobs:
+  claude-architecture:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Pick one architecture issue
+        id: issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ISSUE=$(gh issue list --label agent-claude-architecture --label mastermind-created --state open --limit 1 --json number,title,body --jq '.[0]')
+          if [ -z "$ISSUE" ] || [ "$ISSUE" = "null" ]; then
+            echo "has_issue=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_issue=true" >> $GITHUB_OUTPUT
+            echo "$ISSUE" > issue.json
+            echo "number=$(cat issue.json | jq -r '.number')" >> $GITHUB_OUTPUT
+            echo "title=$(cat issue.json | jq -r '.title')" >> $GITHUB_OUTPUT
+            echo "body<<EOF" >> $GITHUB_OUTPUT
+            cat issue.json | jq -r '.body' >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Claude Architecture Agent
+        if: steps.issue.outputs.has_issue == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are Claude Architecture Agent.
+
+            Follow .github/prompts/worker-rules.md.
+
+            Work on issue:
+            #${{ steps.issue.outputs.number }}
+            ${{ steps.issue.outputs.title }}
+
+            Issue body:
+            ${{ steps.issue.outputs.body }}
+
+            Focus only on:
+            - project structure
+            - component structure
+            - state/data flow
+            - maintainability
+            - safe refactoring
+            - reducing duplication
+            - improving code organization
+
+            Do not deploy.
+            Do not push to main.
+            Avoid huge rewrites.
+
+          claude_args: |
+            --allowedTools "Read,Write,Edit,Bash(npm:*),Bash(pnpm:*),Bash(yarn:*),Bash(git:*),Bash(ls:*),Bash(cat:*),Bash(find:*),Bash(grep:*)"
+
+      - name: Detect changes
+        id: changes
+        if: steps.issue.outputs.has_issue == 'true'
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create PR
+        if: steps.issue.outputs.has_issue == 'true' && steps.changes.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: agents/claude-architecture-${{ steps.issue.outputs.number }}
+          commit-message: "claude-architecture: address issue #${{ steps.issue.outputs.number }}"
+          title: "Claude Architecture Agent: ${{ steps.issue.outputs.title }}"
+          body: |
+            Claude Architecture Agent worked on issue #${{ steps.issue.outputs.number }}.
+
+            Review before merging.
+          delete-branch: true

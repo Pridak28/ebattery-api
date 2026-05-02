@@ -1,0 +1,79 @@
+name: Claude Auto Improve
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  claude-auto-improve:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Run Claude improvement pass
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Improve battery-analytics-pro.
+
+            Use this 6-agent structure mentally:
+            1. Project Architect Agent
+            2. Runtime & Dependency Agent
+            3. Battery Analytics / Business Logic Agent
+            4. UI/UX & Product Agent
+            5. QA / Testing Agent
+            6. Progress & Coaching Agent
+
+            Rules:
+            - Do not deploy.
+            - Do not push directly to main.
+            - Make only safe, reviewable changes.
+            - Do not delete important files.
+            - Keep changes focused.
+            - Follow CLAUDE.md.
+
+            Priorities:
+            - Fix build/runtime/import/type errors.
+            - Improve dashboard UI/UX.
+            - Improve forms, charts, validation, loading states, empty states, and error states.
+            - Check BESS analytics and financial logic for obvious problems.
+            - Add or improve tests if reasonable.
+            - Run install, lint, test, and build commands where available.
+
+            At the end, summarize:
+            - what changed
+            - what remains weak
+            - next priorities
+
+          claude_args: |
+            --allowedTools "Read,Write,Edit,Bash(npm:*),Bash(pnpm:*),Bash(yarn:*),Bash(git:*),Bash(ls:*),Bash(cat:*),Bash(find:*),Bash(grep:*)"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: claude/auto-improve
+          commit-message: "claude: auto-improvement pass"
+          title: "Claude auto-improvement pass"
+          body: |
+            Automated Claude improvement pass.
+
+            Review carefully before merging.
+
+            Claude was instructed to:
+            - use a 6-agent review structure
+            - fix build/runtime issues
+            - improve UI/UX
+            - review BESS analytics logic
+            - avoid deployment
+            - avoid direct changes to main
+          delete-branch: true

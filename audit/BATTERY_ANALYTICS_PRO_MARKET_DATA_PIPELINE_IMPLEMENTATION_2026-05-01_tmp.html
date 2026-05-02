@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>BATTERY_ANALYTICS_PRO_MARKET_DATA_PIPELINE_IMPLEMENTATION_2026-05-01.md</title>
+    <meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+    
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+html,footer,header{
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Custom MD PDF CSS
+ */
+html,footer,header{
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+
+ }
+body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+<link rel="stylesheet" href="file:///Users/seversilaghi/Documents/battery-analytics-pro/audit/R%3A%5C2.Travail%5C1.Enseignement%5CCours%5C_1.Outils%5C2.Developpement%5C1.SCSS%5Cmain.css" type="text/css"><link rel="stylesheet" href="file:///Users/seversilaghi/Documents/battery-analytics-pro/audit/D%3A%5Crdaros%5CCours%5C_1.Outils%5C2.Developpement%5C1.SCSS%5Cmain.css" type="text/css">
+</head>
+
+<body>
+    <h1 id="battery-analytics-pro-market-data-pipeline-implementation-log">Battery Analytics Pro Market Data Pipeline Implementation Log</h1>
+<p>Date: 2026-05-01</p>
+<h2 id="what-was-implemented">What Was Implemented</h2>
+<ul>
+<li>Added a backend market-data package under <code>backend/app/market_data/</code>:
+<ul>
+<li><code>schemas.py</code> for source-kind, bankability, and schema constants.</li>
+<li><code>manifest.py</code> for hashes, row counts, delivery-date bounds, manifest upserts, and audit events.</li>
+<li><code>quality.py</code> for PZU resolution normalization, DAMAS cleaning, freshness checks, duplicate checks, DST-aware slot-count checks, negative activation-volume checks, price-outlier quarantine, and bankable-source enforcement.</li>
+<li><code>pipeline.py</code> for the command-line refresh/validation pipeline.</li>
+<li><code>sources/opcom_pzu.py</code>, <code>sources/transelectrica_public.py</code>, and <code>sources/damas_import.py</code> for public/seed/manual data adapters and the participant-DAMAS placeholder.</li>
+</ul>
+</li>
+<li>Added public OPCOM PZU and Transelectrica DAMAS II/public imbalance adapters.</li>
+<li>Added a manual DAMAS import adapter and a participant-DAMAS adapter that refuses to run until a participant or settlement export is supplied.</li>
+<li>Added a deploy-safe catalog under <code>backend/data_catalog/</code>:
+<ul>
+<li><code>raw/</code> for immutable source snapshots.</li>
+<li><code>processed/</code> for simulator-ready CSVs.</li>
+<li><code>audit/</code> for validation reports, duplicate files, outlier quarantines, and run logs.</li>
+<li><code>manifest.json</code> for provenance, hashes, delivery dates, source kinds, confidence labels, and bankability level.</li>
+</ul>
+</li>
+<li>Generated <code>DATA_PIPELINE_MANIFEST.md</code> from the manifest so source status is visible outside JSON.</li>
+<li>Changed backend default <code>DATA_DIR</code> resolution to prefer <code>backend/data_catalog/processed</code>, then <code>backend/data 2</code>, then the old <code>backend/data</code> symlink.</li>
+<li>Added <code>/api/v1/data/status</code> and <code>/api/v1/data/manifest</code>.</li>
+<li>Added source metadata to FR simulation and FR/PZU stats: <code>source_kind</code>, <code>data_date_max</code>, <code>bankability_level</code>, settlement-grade status, and warnings.</li>
+<li>Updated the FR frontend so it shows source kind and bankability level instead of implying the data is simply live/bankable DAMAS data.</li>
+<li>Added a daily GitHub Actions workflow at <code>.github/workflows/refresh-market-data.yml</code>.</li>
+<li>Made <code>DEBUG=release</code>, <code>DEBUG=prod</code>, and <code>DEBUG=production</code> parse as production false, because the local environment used <code>DEBUG=release</code> and the backend could not even import settings before this fix.</li>
+<li>Fixed <code>backend/requirements.txt</code> formatting so <code>requests</code> and <code>tenacity</code> install correctly in GitHub Actions.</li>
+<li>Aligned the existing PZU efficiency regression test with the current SOC-aware helper defaults by declaring the idealized full-cycle SOC window explicitly.</li>
+</ul>
+<h2 id="generated-artifacts">Generated Artifacts</h2>
+<ul>
+<li><code>backend/data_catalog/processed/pzu_history_3y.csv</code></li>
+<li><code>backend/data_catalog/processed/damas_clean.csv</code></li>
+<li><code>backend/data_catalog/audit/opcom_pzu_validation.json</code></li>
+<li><code>backend/data_catalog/audit/damas_clean_validation.json</code></li>
+<li><code>backend/data_catalog/audit/damas_clean_price_outliers.csv</code></li>
+<li><code>backend/data_catalog/audit/damas_duplicates.csv</code></li>
+<li><code>backend/data_catalog/audit/market_data_refresh.jsonl</code></li>
+<li><code>backend/data_catalog/manifest.json</code></li>
+<li><code>DATA_PIPELINE_MANIFEST.md</code></li>
+</ul>
+<h2 id="current-dataset-status">Current Dataset Status</h2>
+<ul>
+<li><code>opcom_pzu</code>: <code>source_kind=public_observed_system</code>, <code>bankability_level=scenario_public_market_only</code>, 32,809 rows, max delivery date <code>2025-12-03</code>, mixed 15/60-minute resolution flagged.</li>
+<li><code>damas_clean</code>: <code>source_kind=unverified_snapshot</code>, <code>bankability_level=historical_backtest_only</code>, 61,248 rows, max delivery date <code>2025-10-03</code>, 74 high-price outlier rows quarantined.</li>
+</ul>
+<h2 id="important-safety-behavior">Important Safety Behavior</h2>
+<ul>
+<li><code>fr_data_clean.csv</code> is classified as <code>derived_public</code> even if it has <code>afrr_*</code> columns.</li>
+<li>The cleaned DAMAS file from the current repo is classified as <code>unverified_snapshot</code>, not settlement-grade.</li>
+<li>Bankable mode requires <code>participant_export</code> or <code>settlement_export</code>.</li>
+<li>Public Transelectrica/DAMAS data is scenario/calibration data, not project-specific settlement proof.</li>
+<li>Stale public data can remain usable for historical backtests but must not be presented as operational/current without a fresh run.</li>
+</ul>
+<h2 id="verification-run">Verification Run</h2>
+<p>Run from <code>backend/</code>:</p>
+<pre class="hljs"><code><div>python3 -m app.market_data.pipeline --sources seed-pzu,seed-damas --skip-network --as-of 2026-05-01
+python3 -m pytest
+</div></code></pre>
+<p>Result: pipeline refreshed <code>backend/data_catalog/manifest.json</code>; backend tests passed <code>15 passed, 1 warning</code>.</p>
+<p>Run from <code>frontend/</code>:</p>
+<pre class="hljs"><code><div>npm run build
+</div></code></pre>
+<p>Result: Next.js production build passed. <code>npm run lint</code> is not a reliable assertion yet because the repo does not have ESLint configured and Next prompts interactively to create a config.</p>
+<h2 id="not-implemented-yet">Not Implemented Yet</h2>
+<ul>
+<li>Live participant DAMAS settlement import.</li>
+<li>ENTSO-E reconciliation with token-backed source mapping.</li>
+<li>Automatic Netlify/Render deployment changes.</li>
+<li>Full frontend display of the new <code>/api/v1/data/manifest</code> table.</li>
+<li>A complete bankable mode that blocks every investor output unless settlement/participant data is supplied.</li>
+</ul>
+
+</body>
+
+</html>

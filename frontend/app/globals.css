@@ -1,0 +1,343 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* eBattery.energy Dark Theme */
+@layer base {
+  :root {
+    --background: 222 47% 7%;
+    --foreground: 210 20% 90%;
+    --card: 222 40% 10%;
+    --card-foreground: 210 20% 90%;
+    --popover: 222 40% 12%;
+    --popover-foreground: 210 20% 90%;
+    --primary: 166 100% 50%;
+    --primary-foreground: 222 47% 7%;
+    --secondary: 220 15% 18%;
+    --secondary-foreground: 210 20% 85%;
+    --muted: 220 15% 15%;
+    --muted-foreground: 215 15% 55%;
+    --accent: 166 100% 50%;
+    --accent-foreground: 222 47% 7%;
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 220 15% 20%;
+    --input: 220 15% 15%;
+    --ring: 166 100% 50%;
+    --radius: 0.375rem;
+
+    /* eBattery brand colors */
+    --ebattery-cyan: #00ffd1;
+    --ebattery-blue: #2563eb;
+    --ebattery-dark: #0e152d;
+    --ebattery-darker: #0a0f1f;
+    --ebattery-card: #1a1f35;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply antialiased;
+    background: linear-gradient(135deg, #0a0f1f 0%, #0e152d 50%, #111827 100%);
+    min-height: 100vh;
+    color: #e2e8f0;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Custom scrollbar - dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0e152d;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1a1f35;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2a3045;
+}
+
+/* Monospace numbers */
+.font-mono-nums {
+  font-family: 'SF Mono', 'Fira Code', 'IBM Plex Mono', Consolas, monospace;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Value colors - eBattery style */
+.value-positive {
+  @apply text-emerald-400 font-medium;
+}
+
+.value-negative {
+  @apply text-red-400 font-medium;
+}
+
+.value-neutral {
+  @apply text-slate-300;
+}
+
+/* eBattery cyan accent */
+.accent-ebattery {
+  color: #00ffd1;
+}
+
+/* Data grid styling */
+.data-grid {
+  @apply w-full text-sm;
+}
+
+.data-grid th {
+  background: rgba(26, 31, 53, 0.8);
+  @apply text-slate-400 font-medium text-left px-3 py-2.5 text-xs uppercase tracking-wider border-b border-slate-700;
+}
+
+.data-grid td {
+  @apply px-3 py-2.5 border-b border-slate-800/50;
+}
+
+.data-grid tr:hover td {
+  background: rgba(0, 255, 209, 0.05);
+}
+
+/* Stat card styling - eBattery style */
+.stat-card {
+  background: linear-gradient(135deg, rgba(26, 31, 53, 0.8) 0%, rgba(14, 21, 45, 0.9) 100%);
+  border: 1px solid rgba(0, 255, 209, 0.1);
+  @apply rounded-lg p-4;
+  transition: all 0.2s ease;
+}
+
+.stat-card:hover {
+  border-color: rgba(0, 255, 209, 0.3);
+  box-shadow: 0 0 20px rgba(0, 255, 209, 0.1);
+}
+
+.stat-label {
+  @apply text-xs uppercase tracking-wider text-slate-400 mb-1;
+}
+
+.stat-value {
+  @apply text-2xl font-semibold;
+}
+
+/* Panel headers */
+.panel-header {
+  @apply flex items-center justify-between pb-3 mb-4 border-b border-slate-800;
+}
+
+.panel-title {
+  @apply text-sm font-semibold uppercase tracking-wider text-slate-400;
+}
+
+/* Input styling - eBattery */
+.input-dark {
+  background: rgba(14, 21, 45, 0.8);
+  border: 1px solid rgba(0, 255, 209, 0.2);
+  @apply rounded px-3 py-2 text-white
+         focus:outline-none placeholder-slate-500;
+  transition: all 0.2s ease;
+}
+
+.input-dark:focus {
+  border-color: #00ffd1;
+  box-shadow: 0 0 0 2px rgba(0, 255, 209, 0.2);
+}
+
+/* Button styling - eBattery */
+.btn-primary {
+  background: linear-gradient(135deg, #00ffd1 0%, #00d4aa 100%);
+  @apply text-slate-900 font-semibold px-4 py-2 rounded
+         transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #00ffd1 0%, #00e6bb 100%);
+  box-shadow: 0 0 20px rgba(0, 255, 209, 0.4);
+}
+
+.btn-secondary {
+  background: rgba(26, 31, 53, 0.8);
+  border: 1px solid rgba(0, 255, 209, 0.3);
+  @apply text-white font-medium px-4 py-2 rounded
+         transition-all duration-150;
+}
+
+.btn-secondary:hover {
+  background: rgba(0, 255, 209, 0.1);
+  border-color: #00ffd1;
+}
+
+/* Toggle button */
+.toggle-btn {
+  @apply px-3 py-1.5 rounded text-sm font-medium transition-all duration-150;
+}
+
+.toggle-btn-active {
+  background: rgba(0, 255, 209, 0.15);
+  color: #00ffd1;
+  border: 1px solid rgba(0, 255, 209, 0.5);
+}
+
+.toggle-btn-inactive {
+  background: rgba(26, 31, 53, 0.5);
+  @apply text-slate-400 border border-slate-700;
+}
+
+.toggle-btn-inactive:hover {
+  border-color: rgba(0, 255, 209, 0.3);
+  @apply text-slate-400;
+}
+
+/* Chart container - eBattery */
+.chart-container {
+  background: linear-gradient(135deg, rgba(26, 31, 53, 0.6) 0%, rgba(14, 21, 45, 0.8) 100%);
+  border: 1px solid rgba(0, 255, 209, 0.1);
+  @apply rounded-lg p-4;
+}
+
+/* Status indicators */
+.status-dot {
+  @apply w-2 h-2 rounded-full;
+}
+
+.status-live {
+  background: #00ffd1;
+  box-shadow: 0 0 10px #00ffd1;
+  animation: pulse-cyan 2s ease-in-out infinite;
+}
+
+@keyframes pulse-cyan {
+  0%, 100% { opacity: 1; box-shadow: 0 0 10px #00ffd1; }
+  50% { opacity: 0.6; box-shadow: 0 0 5px #00ffd1; }
+}
+
+/* Recharts overrides for dark theme */
+.recharts-cartesian-grid line {
+  stroke: #1a1f35 !important;
+}
+
+.recharts-text {
+  fill: #94a3b8 !important;
+  font-size: 11px !important;
+}
+
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: #1a1f35 !important;
+  border: 1px solid rgba(0, 255, 209, 0.2) !important;
+  border-radius: 6px !important;
+}
+
+.recharts-legend-item-text {
+  color: #94a3b8 !important;
+}
+
+/* Gradient text - eBattery */
+.gradient-text {
+  background: linear-gradient(135deg, #00ffd1 0%, #2563eb 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glow effects */
+.glow-cyan {
+  box-shadow: 0 0 30px rgba(0, 255, 209, 0.3);
+}
+
+.glow-cyan-sm {
+  box-shadow: 0 0 15px rgba(0, 255, 209, 0.2);
+}
+
+/* Card hover effect */
+.card-hover {
+  transition: all 0.3s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 40px rgba(0, 255, 209, 0.15);
+}
+
+/* ============================================================
+   Investor Quick-Look (/investor-summary) — single-page A4
+   printable summary. Light theme; intentionally NOT scoped via
+   Tailwind so print rules survive @media print without purge
+   conflicts.
+   ============================================================ */
+.ql-page {
+  background: #ffffff;
+  color: #111827;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 14mm 14mm 12mm 14mm;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.ql-row { display: flex; gap: 10px; }
+.ql-col { flex: 1 1 0; min-width: 0; }
+.ql-card {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #ffffff;
+}
+.ql-h1 { font-size: 18px; font-weight: 700; color: #111827; letter-spacing: -0.01em; }
+.ql-h2 {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: #374151; margin-bottom: 4px;
+}
+.ql-headline { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+.ql-table { width: 100%; border-collapse: collapse; }
+.ql-table th, .ql-table td {
+  border-bottom: 1px solid #e5e7eb; padding: 5px 6px;
+  font-size: 11px; text-align: left;
+}
+.ql-table th { color: #6b7280; font-weight: 600; }
+.ql-table td.num {
+  text-align: right; font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.ql-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.ql-disclaimer {
+  margin-top: 10px; padding-top: 8px;
+  border-top: 1px dashed #9ca3af;
+  font-size: 9.5px; color: #4b5563;
+}
+.ql-divider { height: 1px; background: #e5e7eb; margin: 10px 0; }
+.ql-meta { font-size: 10px; color: #6b7280; }
+.ql-kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px; color: #111827;
+}
+.ql-risk-list { margin: 0; padding-left: 16px; }
+.ql-risk-list li { margin-bottom: 2px; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #ffffff !important; }
+  .ql-page {
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 12mm 12mm 10mm 12mm !important;
+    width: 100% !important;
+    min-height: auto !important;
+  }
+  @page { size: A4; margin: 0; }
+}

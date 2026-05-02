@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Pre-merge backups of canonical data files (kept locally for hard rollback).
+data 2/*.pre-*-merge
+data_catalog/processed/*.pre-*-merge
+
+# Quarantined / deprecated files moved aside during cleanups.
+.trash/
+
+# Pytest cache
+.pytest_cache/

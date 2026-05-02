@@ -1,0 +1,24 @@
+{
+    "products": [
+        {
+            "id": "afrr_up",
+            "name": "aFRR+",
+            "description": "Automatic Frequency Restoration Reserve (Up)"
+        },
+        {
+            "id": "afrr_down",
+            "name": "aFRR-",
+            "description": "Automatic Frequency Restoration Reserve (Down)"
+        },
+        {
+            "id": "mfrr_up",
+            "name": "mFRR+",
+            "description": "Manual Frequency Restoration Reserve (Up)"
+        },
+        {
+            "id": "mfrr_down",
+            "name": "mFRR-",
+            "description": "Manual Frequency Restoration Reserve (Down)"
+        }
+    ]
+}

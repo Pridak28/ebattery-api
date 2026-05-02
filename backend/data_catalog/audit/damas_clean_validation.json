@@ -1,0 +1,26 @@
+{
+  "bankability_level": "historical_backtest_only",
+  "dataset_id": "damas_clean",
+  "issues": [
+    {
+      "code": "not_settlement_grade",
+      "message": "source_kind=unverified_snapshot is not participant settlement proof.",
+      "severity": "INFO",
+      "source_kind": "unverified_snapshot"
+    },
+    {
+      "code": "price_outliers_quarantined",
+      "columns": [
+        "price_eur_mwh",
+        "afrr_down_price_eur"
+      ],
+      "message": "Found 74 rows with abs(price) > 2000.0 EUR/MWh.",
+      "severity": "WARN"
+    }
+  ],
+  "max_delivery_date": "2026-05-01",
+  "min_delivery_date": "2024-01-05",
+  "passed": true,
+  "row_count": 81408,
+  "source_kind": "unverified_snapshot"
+}

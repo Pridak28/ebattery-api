@@ -1,0 +1,164 @@
+{
+    "strategy": "conservative",
+    "acceptance_rate": 0.9,
+    "power_mw": 15.0,
+    "monthly_projections": [
+        {
+            "month": "2024-01",
+            "selected_service": "aFRR-",
+            "afrr_up_revenue": 173339.46,
+            "afrr_down_revenue": 462969.04,
+            "monthly_revenue": 462969.04
+        },
+        {
+            "month": "2024-02",
+            "selected_service": "aFRR-",
+            "afrr_up_revenue": 165023.23,
+            "afrr_down_revenue": 456260.5,
+            "monthly_revenue": 456260.5
+        },
+        {
+            "month": "2024-03",
+            "selected_service": "aFRR-",
+            "afrr_up_revenue": 166244.65,
+            "afrr_down_revenue": 440652.39,
+            "monthly_revenue": 440652.39
+        },
+        {
+            "month": "2024-04",
+            "selected_service": "aFRR-",
+            "afrr_up_revenue": 168040.67,
+            "afrr_down_revenue": 456067.84,
+            "monthly_revenue": 456067.84
+        },
+        {
+            "month": "2024-05",
+            "selected_service": "aFRR-",
+            "afrr_up_revenue": 165115.94,
+            "afrr_down_revenue": 449194.6,
+            "monthly_revenue": 449194.6
+        },
+        {
+            "month": "2024-06",
+            "selected_service": "aFRR-",
+            "afrr_up_revenue": 167363.83,
+            "afrr_down_revenue": 440107.01,
+            "monthly_revenue": 440107.01
+        },
+        {
+            "month": "2024-07",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 353084.04,
+            "afrr_down_revenue": 154193.47,
+            "monthly_revenue": 353084.04
+        },
+        {
+            "month": "2024-08",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 403519.58,
+            "afrr_down_revenue": 98472.78,
+            "monthly_revenue": 403519.58
+        },
+        {
+            "month": "2024-09",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 276937.02,
+            "afrr_down_revenue": 97200.0,
+            "monthly_revenue": 276937.02
+        },
+        {
+            "month": "2024-10",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 263502.0,
+            "afrr_down_revenue": 109995.77,
+            "monthly_revenue": 263502.0
+        },
+        {
+            "month": "2024-11",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 368902.8,
+            "afrr_down_revenue": 97200.0,
+            "monthly_revenue": 368902.8
+        },
+        {
+            "month": "2024-12",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 337500.48,
+            "afrr_down_revenue": 97200.0,
+            "monthly_revenue": 337500.48
+        },
+        {
+            "month": "2025-01",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 289351.76,
+            "afrr_down_revenue": 113739.28,
+            "monthly_revenue": 289351.76
+        },
+        {
+            "month": "2025-02",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 442683.36,
+            "afrr_down_revenue": 97200.0,
+            "monthly_revenue": 442683.36
+        },
+        {
+            "month": "2025-03",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 289852.2,
+            "afrr_down_revenue": 129607.27,
+            "monthly_revenue": 289852.2
+        },
+        {
+            "month": "2025-04",
+            "selected_service": "aFRR-",
+            "afrr_up_revenue": 255374.33,
+            "afrr_down_revenue": 322519.86,
+            "monthly_revenue": 322519.86
+        },
+        {
+            "month": "2025-05",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 258679.91,
+            "afrr_down_revenue": 194688.72,
+            "monthly_revenue": 258679.91
+        },
+        {
+            "month": "2025-06",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 268772.04,
+            "afrr_down_revenue": 215769.77,
+            "monthly_revenue": 268772.04
+        },
+        {
+            "month": "2025-07",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 298811.27,
+            "afrr_down_revenue": 97200.0,
+            "monthly_revenue": 298811.27
+        },
+        {
+            "month": "2025-08",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 249974.67,
+            "afrr_down_revenue": 134544.89,
+            "monthly_revenue": 249974.67
+        },
+        {
+            "month": "2025-09",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 250326.9,
+            "afrr_down_revenue": 125870.6,
+            "monthly_revenue": 250326.9
+        },
+        {
+            "month": "2025-10",
+            "selected_service": "aFRR+",
+            "afrr_up_revenue": 179112.19,
+            "afrr_down_revenue": 110914.3,
+            "monthly_revenue": 179112.19
+        }
+    ],
+    "total_projected_annual_revenue": 4122971.7,
+    "avg_monthly_revenue": 343580.98,
+    "months_analyzed": 22
+}

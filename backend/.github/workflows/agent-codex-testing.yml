@@ -1,0 +1,93 @@
+name: Agent Codex Testing
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "25 */6 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: agent-codex-testing
+  cancel-in-progress: true
+
+jobs:
+  codex-testing:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Pick one testing issue
+        id: issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ISSUE=$(gh issue list --label agent-codex-testing --label mastermind-created --state open --limit 1 --json number,title,body --jq '.[0]')
+          if [ -z "$ISSUE" ] || [ "$ISSUE" = "null" ]; then
+            echo "has_issue=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_issue=true" >> $GITHUB_OUTPUT
+            echo "$ISSUE" > issue.json
+            echo "number=$(cat issue.json | jq -r '.number')" >> $GITHUB_OUTPUT
+            echo "title=$(cat issue.json | jq -r '.title')" >> $GITHUB_OUTPUT
+            echo "body<<EOF" >> $GITHUB_OUTPUT
+            cat issue.json | jq -r '.body' >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Codex Testing Agent
+        if: steps.issue.outputs.has_issue == 'true'
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+          prompt: |
+            You are Codex Testing Agent.
+
+            Follow .github/prompts/worker-rules.md.
+
+            Work on issue:
+            #${{ steps.issue.outputs.number }}
+            ${{ steps.issue.outputs.title }}
+
+            Issue body:
+            ${{ steps.issue.outputs.body }}
+
+            Focus only on:
+            - tests
+            - QA
+            - validation
+            - edge cases
+            - regression checks
+
+            Do not deploy.
+            Do not push to main.
+
+      - name: Detect changes
+        id: changes
+        if: steps.issue.outputs.has_issue == 'true'
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create PR
+        if: steps.issue.outputs.has_issue == 'true' && steps.changes.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: agents/codex-testing-${{ steps.issue.outputs.number }}
+          commit-message: "codex-testing: address issue #${{ steps.issue.outputs.number }}"
+          title: "Codex Testing Agent: ${{ steps.issue.outputs.title }}"
+          body: |
+            Codex Testing Agent worked on issue #${{ steps.issue.outputs.number }}.
+
+            Review before merging.
+          delete-branch: true
