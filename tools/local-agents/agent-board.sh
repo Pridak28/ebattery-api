@@ -4,7 +4,7 @@
 # Commands:
 #   init                          create board folders + empty tasks.json if missing
 #   status                        print board state
-#   add <id> <title> <agent>      add a task; agent: codex|claude|any
+#   add <id> <title> <role>       add a task; role or legacy provider
 #   tasks                         list all tasks
 #   claim <task_id> <agent>       atomically claim a task (creates lock file)
 #   release <task_id> <agent>     remove the claim (e.g. on cancel)
@@ -20,11 +20,11 @@ shift || true
 
 case "$cmd" in
   init)
-    mkdir -p "$CLAIMS_DIR" "$RESULTS_DIR" "$DECISIONS_DIR" "$RUNS_DIR"
+    mkdir -p "$CLAIMS_DIR" "$RESULTS_DIR" "$DECISIONS_DIR" "$RUNS_DIR" "$EXHAUSTION_DIR"
     if [ ! -f "$TASKS_FILE" ]; then
       cat > "$TASKS_FILE" <<JSON
 {
-  "schema_version": "local_agents_tasks_v1",
+  "schema_version": "local_agents_tasks_v2",
   "generated_at_utc": "$(now_utc)",
   "tasks": []
 }
@@ -41,13 +41,18 @@ JSON
     echo "  REPO_ROOT:        $REPO_ROOT"
     echo "  CODEX_WORKTREE:   $CODEX_WORKTREE  $([ -d "$CODEX_WORKTREE" ] && echo '✓' || echo '(missing)')"
     echo "  CLAUDE_WORKTREE:  $CLAUDE_WORKTREE  $([ -d "$CLAUDE_WORKTREE" ] && echo '✓' || echo '(missing)')"
+    IFS='|' read -r master_provider master_reason < <(select_master_provider)
+    echo "  CURRENT MASTER:   $master_provider ($master_reason)"
     echo ""
     if [ ! -f "$TASKS_FILE" ]; then
       echo "  (tasks.json missing — run 'agent-board.sh init')"
       exit 0
     fi
     echo "  Tasks:"
-    jq -r '.tasks[] | "    \(.id) [\(.status)] owner=\(.owner // "—") prefer=\(.prefer // "any") :: \(.title)"' "$TASKS_FILE" 2>/dev/null || echo "    (parse error)"
+    jq -r '
+      .tasks[]
+      | "    \(.id) [\(.status)] role=\(.role // "legacy") preferred=\(.preferred_provider // .prefer // "any") fallback=\(.fallback_provider // "auto") assigned=\(.assigned_provider // .owner // "—") reason=\(.takeover_reason // "—") :: \(.title)"
+    ' "$TASKS_FILE" 2>/dev/null || echo "    (parse error)"
     echo ""
     echo "  Active claims (lock files):"
     if ls "$CLAIMS_DIR"/*.json >/dev/null 2>&1; then
@@ -76,26 +81,35 @@ JSON
     ;;
 
   add)
-    id="${1:?need id}"; title="${2:?need title}"; prefer="${3:-any}"
+    id="${1:?need id}"; title="${2:?need title}"; role_or_provider="${3:-source-discovery}"
     [ -f "$TASKS_FILE" ] || { err "Run 'init' first."; exit 1; }
     if jq -e --arg id "$id" '.tasks[] | select(.id == $id)' "$TASKS_FILE" >/dev/null; then
       err "Task $id already exists."
       exit 1
     fi
+    if [ "$role_or_provider" = "codex" ] || [ "$role_or_provider" = "claude" ] || [ "$role_or_provider" = "any" ]; then
+      role="source-discovery"
+      preferred="$role_or_provider"
+    else
+      role="$(normalize_role "$role_or_provider")"
+      preferred="$(preferred_provider_for_role "$role")"
+    fi
+    fallback="$(fallback_provider_for "$preferred")"
     tmp="$(mktemp)"
-    jq --arg id "$id" --arg t "$title" --arg p "$prefer" --arg now "$(now_utc)" \
-       '.tasks += [{"id":$id,"title":$t,"status":"open","owner":null,"prefer":$p,"created_at_utc":$now,"files_likely_touched":[],"validation_commands":[],"definition_of_done":[]}]' \
+    jq --arg id "$id" --arg t "$title" --arg role "$role" --arg preferred "$preferred" --arg fallback "$fallback" --arg now "$(now_utc)" \
+       '.schema_version = "local_agents_tasks_v2" |
+        .tasks += [{"id":$id,"title":$t,"status":"open","owner":null,"role":$role,"preferred_provider":$preferred,"fallback_provider":$fallback,"assigned_provider":null,"takeover_reason":null,"created_at_utc":$now,"files_likely_touched":[],"validation_commands":[],"definition_of_done":[]}]' \
        "$TASKS_FILE" > "$tmp" && mv "$tmp" "$TASKS_FILE"
-    ok "Added task $id: $title (prefer=$prefer)"
+    ok "Added task $id: $title (role=$role preferred=$preferred fallback=$fallback)"
     ;;
 
   tasks)
     [ -f "$TASKS_FILE" ] || { err "tasks.json missing — run init."; exit 1; }
-    jq -r '.tasks[] | "\(.id) [\(.status)] owner=\(.owner // "-") prefer=\(.prefer) :: \(.title)"' "$TASKS_FILE"
+    jq -r '.tasks[] | "\(.id) [\(.status)] role=\(.role // "legacy") preferred=\(.preferred_provider // .prefer // "any") assigned=\(.assigned_provider // .owner // "-") :: \(.title)"' "$TASKS_FILE"
     ;;
 
   claim)
-    id="${1:?need task id}"; agent="${2:?need agent name}"
+    id="${1:?need task id}"; agent="${2:?need agent name}"; takeover_reason="${3:-manual_claim}"
     if [ "$agent" != "codex" ] && [ "$agent" != "claude" ]; then
       err "Agent must be codex or claude."; exit 1
     fi
@@ -104,22 +118,38 @@ JSON
     status="$(jq -r --arg id "$id" '.tasks[] | select(.id == $id) | .status // "missing"' "$TASKS_FILE")"
     [ "$status" = "missing" ] && { err "Task $id not found."; exit 1; }
     [ "$status" != "open" ] && { err "Task $id status is '$status', cannot claim."; exit 1; }
+    IFS='|' read -r resolved_provider resolved_reason < <(resolve_task_provider "$id" any || true)
+    if [ "$resolved_provider" != "$agent" ]; then
+      err "Task $id resolves to '$resolved_provider' ($resolved_reason), not '$agent'."
+      exit 1
+    fi
+    if [ "$takeover_reason" = "manual_claim" ]; then
+      takeover_reason="$resolved_reason"
+    fi
 
     lock_file="$CLAIMS_DIR/$id.json"
     # Lock-file based atomic-ish claim:
-    if ! ( set -o noclobber; printf '{"task_id":"%s","agent":"%s","claimed_at_utc":"%s","pid":%d}\n' \
-                "$id" "$agent" "$(now_utc)" "$$" > "$lock_file" ) 2>/dev/null; then
+    role="$(task_role "$id")"
+    preferred="$(task_preferred_provider "$id")"
+    fallback="$(task_fallback_provider "$id")"
+    if ! ( set -o noclobber; printf '{"task_id":"%s","agent":"%s","role":"%s","preferred_provider":"%s","fallback_provider":"%s","takeover_reason":"%s","claimed_at_utc":"%s","pid":%d}\n' \
+                "$id" "$agent" "$role" "$preferred" "$fallback" "$takeover_reason" "$(now_utc)" "$$" > "$lock_file" ) 2>/dev/null; then
       existing="$(jq -r '.agent' "$lock_file" 2>/dev/null || echo unknown)"
       err "Task $id is already claimed by '$existing' (lock at $lock_file)."
       exit 2
     fi
     # Update tasks.json
     tmp="$(mktemp)"
-    jq --arg id "$id" --arg a "$agent" \
+    jq --arg id "$id" --arg a "$agent" --arg role "$role" --arg preferred "$preferred" --arg fallback "$fallback" --arg reason "$takeover_reason" \
        '(.tasks[] | select(.id == $id) | .owner) = $a |
+        (.tasks[] | select(.id == $id) | .assigned_provider) = $a |
+        (.tasks[] | select(.id == $id) | .role) = $role |
+        (.tasks[] | select(.id == $id) | .preferred_provider) = $preferred |
+        (.tasks[] | select(.id == $id) | .fallback_provider) = $fallback |
+        (.tasks[] | select(.id == $id) | .takeover_reason) = $reason |
         (.tasks[] | select(.id == $id) | .status) = "in_progress"' \
        "$TASKS_FILE" > "$tmp" && mv "$tmp" "$TASKS_FILE"
-    ok "$agent claimed $id"
+    ok "$agent claimed $id (role=$role preferred=$preferred fallback=$fallback reason=$takeover_reason)"
     echo "  lock: $lock_file"
     ;;
 
@@ -137,6 +167,8 @@ JSON
     tmp="$(mktemp)"
     jq --arg id "$id" \
        '(.tasks[] | select(.id == $id) | .owner) = null |
+        (.tasks[] | select(.id == $id) | .assigned_provider) = null |
+        (.tasks[] | select(.id == $id) | .takeover_reason) = null |
         (.tasks[] | select(.id == $id) | .status) = "open"' \
        "$TASKS_FILE" > "$tmp" && mv "$tmp" "$TASKS_FILE"
     ok "Released $id"
@@ -146,10 +178,19 @@ JSON
     verdict="${cmd#result-}"
     id="${1:?need task id}"; agent="${2:?need agent name}"; branch="${3:?need branch}"; reason="${4:-no-reason}"
     rfile="$RESULTS_DIR/$id.$agent.$(now_id).json"
+    role="$(task_role "$id")"
+    preferred="$(task_preferred_provider "$id")"
+    fallback="$(task_fallback_provider "$id")"
+    takeover_reason="$(task_json_field "$id" '.tasks[] | select(.id == $id) | (.takeover_reason // "direct")')"
     cat > "$rfile" <<JSON
 {
   "task_id": "$id",
+  "role": "$role",
+  "preferred_provider": "$preferred",
+  "fallback_provider": "$fallback",
   "agent": "$agent",
+  "actual_provider": "$agent",
+  "takeover_reason": "$takeover_reason",
   "branch": "$branch",
   "verdict": "$verdict",
   "reason": "$reason",
@@ -197,7 +238,7 @@ Commands:
   init                                       create folders + empty tasks.json
   status                                     show board state (default if no command)
   tasks                                      list tasks (one per line)
-  add <id> <title> <prefer:codex|claude|any> add a new open task
+  add <id> <title> <role|legacy-provider>       add a new open task
   claim <task_id> <agent>                    atomically claim (creates lock file)
   release <task_id> <agent>                  release a claim
   result-accept <id> <agent> <branch> <reason>

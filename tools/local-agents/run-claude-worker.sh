@@ -30,26 +30,26 @@ fi
 
 # ---- pick a claimable task ----
 pick_task() {
-  jq -r --arg agent "$AGENT" '
-    .tasks[]
-    | select(.status == "open")
-    | select((.prefer // "any") == $agent or (.prefer // "any") == "any")
-    | .id
-  ' "$TASKS_FILE" | while read -r id; do
+  jq -r '.tasks[] | select(.status == "open") | .id' "$TASKS_FILE" | while read -r id; do
     [ -f "$CLAIMS_DIR/$id.json" ] && continue
-    echo "$id"
-    break
+    IFS='|' read -r resolved reason < <(resolve_task_provider "$id" any || true)
+    if [ "$resolved" = "$AGENT" ]; then
+      printf '%s|%s\n' "$id" "$reason"
+      break
+    fi
   done
 }
 
-TASK_ID="$(pick_task)"
+PICKED="$(pick_task)"
+TASK_ID="${PICKED%%|*}"
+TAKEOVER_REASON="${PICKED#*|}"
 if [ -z "$TASK_ID" ]; then
   warn "No claimable task for $AGENT. Exiting."
   exit 0
 fi
 
-log "Picked task: $TASK_ID"
-"$LIB_SH_DIR/agent-board.sh" claim "$TASK_ID" "$AGENT" || { err "Claim failed."; exit 1; }
+log "Picked task: $TASK_ID (reason=$TAKEOVER_REASON)"
+"$LIB_SH_DIR/agent-board.sh" claim "$TASK_ID" "$AGENT" "$TAKEOVER_REASON" || { err "Claim failed."; exit 1; }
 trap 'warn "Worker exiting; releasing $TASK_ID"; "$LIB_SH_DIR/agent-board.sh" release "$TASK_ID" "$AGENT" >/dev/null 2>&1 || true' EXIT
 
 TASK_SLUG="$(sanitize "$TASK_ID")"
@@ -59,6 +59,10 @@ cd "$WORKTREE"
 git checkout -B "$BRANCH" 2>&1 | tail -3
 
 TASK_TITLE="$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | .title' "$TASKS_FILE")"
+TASK_ROLE="$(task_role "$TASK_ID")"
+TASK_PREFERRED="$(task_preferred_provider "$TASK_ID")"
+TASK_FALLBACK="$(task_fallback_provider "$TASK_ID")"
+TASK_ROLE_INSTRUCTIONS="$(role_instructions "$TASK_ROLE")"
 TASK_FILES="$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | (.files_likely_touched // []) | join("\n  - ")' "$TASKS_FILE")"
 TASK_DOD="$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | (.definition_of_done // []) | join("\n  - ")' "$TASKS_FILE")"
 TASK_VALIDATION="$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | (.validation_commands // []) | join("\n  - ")' "$TASKS_FILE")"
@@ -69,6 +73,14 @@ You are the Claude Code worker in a dual-agent system. Working dir: $WORKTREE
 Branch: $BRANCH
 Task ID: $TASK_ID
 Task title: $TASK_TITLE
+Task role: $TASK_ROLE
+Original preferred provider: $TASK_PREFERRED
+Fallback provider: $TASK_FALLBACK
+Actual provider: claude
+Provider routing reason: $TAKEOVER_REASON
+
+Role instructions:
+  $TASK_ROLE_INSTRUCTIONS
 
 Files likely to touch:
   - ${TASK_FILES:-(unspecified)}
@@ -86,6 +98,7 @@ Hard rules:
   - DO NOT commit secrets (.env, .pem, .key).
   - DO NOT modify the Codex worktree at $CODEX_WORKTREE.
   - Do not change scope: implement only this task.
+  - Preserve the role behavior above even if Claude is taking over a Codex-preferred role.
 
 Implement the task end-to-end, then run the validation commands.
 Report back what you changed and the validation result.

@@ -10,13 +10,22 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 ensure_jq
 
 RUN_ID="${1:-${LOCAL_AGENT_RUN_ID:-$(now_id)}}"
+if [ -n "${2:-}" ]; then
+  MASTER_PROVIDER="$2"
+  MASTER_REASON="${3:-provided_by_loop}"
+else
+  IFS='|' read -r MASTER_PROVIDER MASTER_REASON < <(select_master_provider)
+fi
 DECISION_FILE="$DECISIONS_DIR/$RUN_ID.md"
 mkdir -p "$DECISIONS_DIR"
 
-log "Master review for run $RUN_ID → $DECISION_FILE"
+log "Master review for run $RUN_ID using $MASTER_PROVIDER ($MASTER_REASON) → $DECISION_FILE"
 
 # Collect results from the run (filename pattern: <task>.<agent>.<ts>.json)
-mapfile -t RESULT_FILES < <(ls -t "$RESULTS_DIR"/*.json 2>/dev/null || true)
+RESULT_FILES=()
+while IFS= read -r result_file; do
+  [ -n "$result_file" ] && RESULT_FILES+=("$result_file")
+done < <(ls -t "$RESULTS_DIR"/*.json 2>/dev/null || true)
 if [ "${#RESULT_FILES[@]}" -eq 0 ]; then
   warn "No results in $RESULTS_DIR — nothing to review."
   cat > "$DECISION_FILE" <<MD
@@ -80,8 +89,22 @@ ACCEPTED_TOP=("${MASTER_KEPT[@]:0:$KEEP}")
   echo ""
   echo "- Run id: \`$RUN_ID\`"
   echo "- Generated: $(now_utc)"
+  echo "- Master provider: \`$MASTER_PROVIDER\`"
+  echo "- Master selection reason: \`$MASTER_REASON\`"
   echo "- Results scanned: ${#RESULT_FILES[@]}"
   echo "- Max prototypes to keep: $KEEP"
+  echo ""
+  case "$MASTER_PROVIDER" in
+    codex)
+      echo "Codex is acting as master for this review because Claude is unavailable/exhausted or Codex was forced."
+      ;;
+    claude)
+      echo "Claude is acting as master for this review under the normal/old preferred configuration."
+      ;;
+    shell)
+      echo "Shell heuristic master is acting as fallback because no model provider was eligible."
+      ;;
+  esac
   echo ""
   echo "## Accepted (kept for human review)"
   if [ "${#ACCEPTED_TOP[@]}" -eq 0 ]; then

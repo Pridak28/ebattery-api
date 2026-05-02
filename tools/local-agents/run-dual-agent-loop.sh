@@ -33,11 +33,11 @@ TASK_COUNT="$(jq '.tasks | length' "$TASKS_FILE")"
 if [ "$TASK_COUNT" -eq 0 ]; then
   log "Queue empty — seeding starter tasks."
   "$LIB_SH_DIR/agent-board.sh" add T-DRY-001 \
-    "Confirm backend pytest still 100% green (sanity)" any
+    "Confirm backend pytest still 100% green (sanity)" verification
   "$LIB_SH_DIR/agent-board.sh" add T-DRY-002 \
-    "Confirm frontend next build succeeds (sanity)" any
+    "Confirm frontend next build succeeds (sanity)" frontend-product
   "$LIB_SH_DIR/agent-board.sh" add T-DRY-003 \
-    "Print app version + manifest dataset coverage (read-only sanity)" any
+    "Print app version + manifest dataset coverage (read-only sanity)" source-discovery
 fi
 
 # ---- run id ----
@@ -52,6 +52,8 @@ log "  max prototypes:   $LOCAL_AGENT_MAX_PROTOTYPES"
 log "  push branches:    $LOCAL_AGENT_PUSH_BRANCHES (must stay 0 unless remote configured)"
 log "  codex worktree:   $CODEX_WORKTREE"
 log "  claude worktree:  $CLAUDE_WORKTREE"
+IFS='|' read -r START_MASTER START_MASTER_REASON < <(select_master_provider)
+log "  master provider:  $START_MASTER ($START_MASTER_REASON)"
 
 # ---- main loop ----
 START="$(date +%s)"
@@ -66,6 +68,8 @@ while [ "$(date +%s)" -lt "$END" ]; do
   CODEX_OK=1; CLAUDE_OK=1
   if is_exhausted codex;  then warn "codex is rate-limited; skipping this iteration."; CODEX_OK=0; fi
   if is_exhausted claude; then warn "claude is rate-limited; skipping this iteration."; CLAUDE_OK=0; fi
+  IFS='|' read -r LOOP_MASTER LOOP_MASTER_REASON < <(select_master_provider)
+  log "Current master provider: $LOOP_MASTER ($LOOP_MASTER_REASON)"
 
   if [ "$CODEX_OK" = "0" ] && [ "$CLAUDE_OK" = "0" ]; then
     warn "Both agents exhausted — sleeping 300s before re-checking markers."
@@ -108,7 +112,8 @@ done
 log "===== Loop time budget exhausted ====="
 
 # ---- master review ----
-bash "$LIB_SH_DIR/run-master-review.sh" "$LOCAL_AGENT_RUN_ID" || warn "master review failed"
+IFS='|' read -r FINAL_MASTER FINAL_MASTER_REASON < <(select_master_provider)
+bash "$LIB_SH_DIR/run-master-review.sh" "$LOCAL_AGENT_RUN_ID" "$FINAL_MASTER" "$FINAL_MASTER_REASON" || warn "master review failed"
 
 # ---- final summary ----
 log ""
