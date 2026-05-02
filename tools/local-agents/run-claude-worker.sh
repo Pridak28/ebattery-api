@@ -91,11 +91,12 @@ Implement the task end-to-end, then run the validation commands.
 Report back what you changed and the validation result.
 PROMPT
 
-log "Invoking claude (permission-mode=auto)..."
+log "Invoking claude -p (non-interactive print mode, permission-mode=auto)..."
 LOG_FILE="$RUNS_DIR/$RUN_ID.$AGENT.$TASK_SLUG.log"
 mkdir -p "$RUNS_DIR"
 EXIT_CODE=0
-if claude --permission-mode auto < "$PROMPT_FILE" 2>&1 | tee "$LOG_FILE"; then
+PROMPT_TEXT="$(cat "$PROMPT_FILE")"
+if claude -p "$PROMPT_TEXT" --permission-mode auto 2>&1 | tee "$LOG_FILE"; then
   ok "claude CLI exited 0"
 else
   EXIT_CODE=$?

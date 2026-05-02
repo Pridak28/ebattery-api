@@ -99,12 +99,13 @@ Implement the task end-to-end, then run the validation commands.
 Report back what you changed and the validation result.
 PROMPT
 
-# ---- run Codex CLI (one-shot) ----
-log "Invoking codex (workspace-write, no auto-approve)..."
+# ---- run Codex CLI (non-interactive 'exec' subcommand — needs TTY otherwise) ----
+log "Invoking codex exec (workspace-write, no auto-approve)..."
 LOG_FILE="$RUNS_DIR/$RUN_ID.$AGENT.$TASK_SLUG.log"
 mkdir -p "$RUNS_DIR"
 EXIT_CODE=0
-if codex -s workspace-write -a never < "$PROMPT_FILE" 2>&1 | tee "$LOG_FILE"; then
+PROMPT_TEXT="$(cat "$PROMPT_FILE")"
+if codex exec -s workspace-write -a never "$PROMPT_TEXT" 2>&1 | tee "$LOG_FILE"; then
   ok "codex CLI exited 0"
 else
   EXIT_CODE=$?

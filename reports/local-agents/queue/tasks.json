@@ -1,5 +1,39 @@
 {
   "schema_version": "local_agents_tasks_v1",
   "generated_at_utc": "2026-05-02T19:33:31Z",
-  "tasks": []
+  "tasks": [
+    {
+      "id": "T-DRY-001",
+      "title": "Confirm backend pytest still 100% green (sanity)",
+      "status": "rejected",
+      "owner": "codex",
+      "prefer": "any",
+      "created_at_utc": "2026-05-02T19:45:19Z",
+      "files_likely_touched": [],
+      "validation_commands": [],
+      "definition_of_done": []
+    },
+    {
+      "id": "T-DRY-002",
+      "title": "Confirm frontend next build succeeds (sanity)",
+      "status": "awaiting_master_review",
+      "owner": null,
+      "prefer": "any",
+      "created_at_utc": "2026-05-02T19:45:19Z",
+      "files_likely_touched": [],
+      "validation_commands": [],
+      "definition_of_done": []
+    },
+    {
+      "id": "T-DRY-003",
+      "title": "Print app version + manifest dataset coverage (read-only sanity)",
+      "status": "in_progress",
+      "owner": "claude",
+      "prefer": "any",
+      "created_at_utc": "2026-05-02T19:45:19Z",
+      "files_likely_touched": [],
+      "validation_commands": [],
+      "definition_of_done": []
+    }
+  ]
 }
