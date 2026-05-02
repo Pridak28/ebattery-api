@@ -97,6 +97,7 @@ reports/local-agents/queue/claims/*.json
 reports/local-agents/queue/results/*.json
 !reports/local-agents/queue/results/.gitkeep
 reports/local-agents/runs/
+reports/local-agents/reports/master-refill/
 caffeinate.pid
 .run-id
 
