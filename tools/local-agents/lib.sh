@@ -67,12 +67,20 @@ require_clean_main() {
     err "Switch to main: cd $REPO_ROOT && git checkout main"
     exit 1
   fi
-  if [ -n "$(cd "$REPO_ROOT" && git status --porcelain)" ]; then
+  local dirty
+  dirty="$(
+    cd "$REPO_ROOT"
+    git status --porcelain | grep -v -E \
+      '^.. reports/local-agents/queue/(tasks\.json|exhausted/[^/]+\.json)$|^.. reports/local-agents/queue/(claims|results)/[^/]+\.json$|^.. reports/local-agents/runs/|^.. reports/local-agents/reports/master-refill/' \
+      || true
+  )"
+  if [ -n "$dirty" ]; then
     err "Refusing to start: $REPO_ROOT working tree is dirty."
+    echo "$dirty" >&2
     err "Commit or stash first."
     exit 1
   fi
-  ok "Repo is on clean main."
+  ok "Repo is on main with no non-runtime local changes."
 }
 
 # --- agent → worktree resolver ---

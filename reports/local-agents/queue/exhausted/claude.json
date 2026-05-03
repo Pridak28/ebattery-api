@@ -1,6 +1,0 @@
-{
-  "agent": "claude",
-  "exhausted_at_utc": "2026-05-02T20:09:38Z",
-  "reason": "rate_limit_pattern_matched",
-  "reset_after_seconds": 18000
-}
