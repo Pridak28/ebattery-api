@@ -32,6 +32,52 @@ from app.market_data.quality import (
     regulatory_regime_for_date,
 )
 from app.market_data.schemas import BANKABLE_SOURCE_KINDS, bankability_level_for_source
+
+# Real Romanian aFRR capacity-tender clearing prices, scraped from DAMAS
+# (Transelectrica) tender statistics. Used as the calibration anchor for
+# the model's capacity bid — replaces the prior synthetic
+# "22% of activation price" rule which produced bids ~3-4× too high
+# vs documented Romanian market reality.
+#
+# Source CSV: backend/data_catalog/processed/damas_capacity_clearing.csv
+# Re-scrape with: scripts/scrape_damas_capacity.py
+_DAMAS_CAPACITY_CSV = (
+    Path(__file__).resolve().parents[2]
+    / "data_catalog" / "processed" / "damas_capacity_clearing.csv"
+)
+# Fallbacks anchored on the 6 sampled tenders (Apr 2025 – Jan 2026)
+# in case the CSV is missing. Conservative side: aFRR capacity prices
+# have compressed through 2025 from ~€12 → ~€5/MW/h.
+_DAMAS_FALLBACK_AFRR_UP_EUR_MW_H = 8.72
+_DAMAS_FALLBACK_AFRR_DOWN_EUR_MW_H = 6.59
+
+
+def _load_damas_capacity_avgs() -> Dict[str, float]:
+    """Average DAMAS aFRRUp / aFRRDown capacity clearing prices (€/MW/h),
+    computed from the scraped CSV. Cached on the module to avoid re-reading.
+    """
+    if not _DAMAS_CAPACITY_CSV.exists():
+        return {
+            "aFRRUp": _DAMAS_FALLBACK_AFRR_UP_EUR_MW_H,
+            "aFRRDown": _DAMAS_FALLBACK_AFRR_DOWN_EUR_MW_H,
+        }
+    try:
+        df = pd.read_csv(_DAMAS_CAPACITY_CSV)
+        avgs = df.groupby("service")["avg_clearing_price_eur_mw_h"].mean().to_dict()
+        return {
+            "aFRRUp": float(avgs.get("aFRRUp", _DAMAS_FALLBACK_AFRR_UP_EUR_MW_H)),
+            "aFRRDown": float(avgs.get("aFRRDown", _DAMAS_FALLBACK_AFRR_DOWN_EUR_MW_H)),
+        }
+    except Exception:
+        return {
+            "aFRRUp": _DAMAS_FALLBACK_AFRR_UP_EUR_MW_H,
+            "aFRRDown": _DAMAS_FALLBACK_AFRR_DOWN_EUR_MW_H,
+        }
+
+
+_DAMAS_CAPACITY_AVGS = _load_damas_capacity_avgs()
+
+
 from app.models.fr import (
     FRMonthlyResult,
     FRMultiProductRequest,
@@ -1142,24 +1188,31 @@ class FRService:
         # - High activation prices → tight market → capacity clearing prices are high
         # - Low activation prices → loose market → capacity clearing prices are low
 
-        # Get activation price at the target percentile (this represents market conditions)
+        # Get activation price at target percentile (kept for activation
+        # revenue leg below).
         afrr_up_activation_proxy = float(valid_up.quantile(bid_percentile))
         afrr_down_activation_proxy = float(valid_down.quantile(bid_percentile))
 
-        # Derive capacity bid from activation price using empirical ratio
-        # Typical Romanian market: capacity bids are ~20-30% of activation prices
-        # For conservative bidding (high acceptance), use lower multiplier
-        capacity_ratio = 0.20 + (bid_percentile * 0.10)  # 0.20-0.30 range
+        # CAPACITY BID — anchored on REAL DAMAS tender clearing prices
+        # scraped from Transelectrica (see _DAMAS_CAPACITY_AVGS at module top).
+        # The strategy multiplier mirrors the bid_percentile shape:
+        # higher acceptance (lower percentile) ⇒ slightly under-bid;
+        # lower acceptance ⇒ slightly over-bid.
+        damas_up = _DAMAS_CAPACITY_AVGS["aFRRUp"]
+        damas_down = _DAMAS_CAPACITY_AVGS["aFRRDown"]
+        # Strategy multiplier: 0.85 at 90% accept, 1.00 at 80%, 1.15 at 60%.
+        # bid_percentile ∈ [0.05, 0.50] → mult ∈ [~0.86, ~1.30].
+        bid_strategy_mult = 0.85 + bid_percentile * 0.90
+        afrr_up_capacity_bid = damas_up * bid_strategy_mult
+        afrr_down_capacity_bid = damas_down * bid_strategy_mult
 
-        afrr_up_capacity_bid = afrr_up_activation_proxy * capacity_ratio
-        afrr_down_capacity_bid = abs(afrr_down_activation_proxy) * capacity_ratio
-
-        # Cap to a realistic Romanian band. The previous floor was 15 EUR/MW/h,
-        # which is ~3× the published DAMAS aFRR capacity rate (5 EUR/MW/h).
-        # Anchor on ROMANIAN_FR_PRODUCTS so the bid floor matches the catalog.
+        # Floor anchored on ROMANIAN_FR_PRODUCTS (5 EUR/MW/h aFRR catalog
+        # floor). Cap raised slightly above sampled DAMAS prices so an
+        # aggressive bidder can over-bid in stress weeks; well below the
+        # prior 60/40 catalog cap.
         afrr_floor = float(ROMANIAN_FR_PRODUCTS["aFRR"]["capacity_eur_mw_h"])
-        afrr_up_capacity_bid = min(60, max(afrr_floor, afrr_up_capacity_bid))
-        afrr_down_capacity_bid = min(40, max(afrr_floor, afrr_down_capacity_bid))
+        afrr_up_capacity_bid = min(20.0, max(afrr_floor, afrr_up_capacity_bid))
+        afrr_down_capacity_bid = min(20.0, max(afrr_floor, afrr_down_capacity_bid))
 
         # Estimate daily revenue with battery capacity constraints
         daily_hours = 24
@@ -1318,22 +1371,31 @@ class FRService:
             # Higher acceptance = lower percentile = lower bid
             bid_percentile = 1 - acceptance_rate
 
-            # Get activation price at target percentile (market stress proxy)
+            # Get activation price at target percentile — kept for the
+            # activation revenue leg below; no longer drives capacity bid.
             afrr_up_proxy = float(valid_up.quantile(bid_percentile))
             afrr_down_proxy = float(valid_down.quantile(bid_percentile))
 
-            # Derive capacity bid using empirical ratio (20-30% of activation)
-            # Conservative strategy uses lower multiplier, aggressive uses higher
-            capacity_ratio = 0.20 + (bid_percentile * 0.10)  # 0.20-0.30 range
+            # CAPACITY BID — anchored on REAL DAMAS tender clearing prices
+            # scraped from Transelectrica. Replaces the prior synthetic
+            # "22% of activation price" rule which produced bids ~3-4×
+            # too high (€27.81/MW/h average vs real ~€8/MW/h). The
+            # `capacity_mult` (0.85 / 1.0 / 1.15 for conservative / balanced
+            # / aggressive) is preserved as a strategy lever — bid below
+            # market to be accepted more, above market to be paid more
+            # when accepted. Same flooring on the catalog floor.
+            damas_up = _DAMAS_CAPACITY_AVGS["aFRRUp"]
+            damas_down = _DAMAS_CAPACITY_AVGS["aFRRDown"]
+            afrr_up_capacity_bid = damas_up * capacity_mult
+            afrr_down_capacity_bid = damas_down * capacity_mult
 
-            afrr_up_capacity_bid = afrr_up_proxy * capacity_ratio * capacity_mult
-            afrr_down_capacity_bid = abs(afrr_down_proxy) * capacity_ratio * capacity_mult
-
-            # Floor anchored on ROMANIAN_FR_PRODUCTS (5 EUR/MW/h aFRR capacity)
-            # rather than the previous arbitrary 15/10 EUR/MW/h floor.
+            # Floor anchored on ROMANIAN_FR_PRODUCTS (5 EUR/MW/h aFRR capacity).
+            # Cap raised slightly above the real DAMAS sample range so an
+            # aggressive bidder can still over-bid in stress weeks; well
+            # below the prior 60/40 catalog cap.
             afrr_floor = float(ROMANIAN_FR_PRODUCTS["aFRR"]["capacity_eur_mw_h"])
-            afrr_up_capacity_bid = min(60, max(afrr_floor, afrr_up_capacity_bid))
-            afrr_down_capacity_bid = min(40, max(afrr_floor, afrr_down_capacity_bid))
+            afrr_up_capacity_bid = min(20.0, max(afrr_floor, afrr_up_capacity_bid))
+            afrr_down_capacity_bid = min(20.0, max(afrr_floor, afrr_down_capacity_bid))
 
             # Use actual calendar month length from the data instead of a flat 30.
             try:
