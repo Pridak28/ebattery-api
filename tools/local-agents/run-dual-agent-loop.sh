@@ -78,7 +78,10 @@ while [ "$(date +%s)" -lt "$END" ]; do
   fi
 
   if [ "$CODEX_OK" = "1" ] && command -v codex >/dev/null 2>&1; then
-    bash "$LIB_SH_DIR/run-codex-worker.sh"; rc=$?
+    set +e
+    bash "$LIB_SH_DIR/run-codex-worker.sh"
+    rc=$?
+    set -e
     if [ "$rc" = "75" ]; then
       warn "codex hit token exhaustion this iteration; failover engaged."
     elif [ "$rc" -ne 0 ]; then
@@ -92,7 +95,10 @@ while [ "$(date +%s)" -lt "$END" ]; do
   [ "$(date +%s)" -ge "$END" ] && break
 
   if [ "$CLAUDE_OK" = "1" ] && command -v claude >/dev/null 2>&1; then
-    bash "$LIB_SH_DIR/run-claude-worker.sh"; rc=$?
+    set +e
+    bash "$LIB_SH_DIR/run-claude-worker.sh"
+    rc=$?
+    set -e
     if [ "$rc" = "75" ]; then
       warn "claude hit token exhaustion this iteration; failover engaged."
     elif [ "$rc" -ne 0 ]; then
