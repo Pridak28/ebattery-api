@@ -72,16 +72,22 @@ class Settings(BaseSettings):
 
     # Default battery parameters — anchored on user's quote:
     # €3,500,000 EPC for 10 MW / 20 MWh (= €175/kWh installed).
+    # User directive (2026-05-03): the install is sized so the FULL 20 MWh
+    # is the usable per-cycle throughput (oversize the nameplate so the
+    # warranty band still covers 20 MWh, or run outside the warranty band
+    # by spec). RTE = 0.97 (3% per round-trip) per the user's vendor target.
     DEFAULT_POWER_MW: float = 10.0
     DEFAULT_CAPACITY_MWH: float = 20.0
-    DEFAULT_EFFICIENCY: float = 0.88
+    DEFAULT_EFFICIENCY: float = 0.97
 
-    # Phase D physical-realism defaults. AC-to-AC round-trip efficiency for
-    # new Romanian Li-ion BESS (2024-2026 vendor specs). Applied as sqrt(eta)
-    # on charge AND discharge so the round-trip preserves eta.
-    DEFAULT_RTE_AC_AC: float = 0.88
-    DEFAULT_SOC_MIN: float = 0.10
-    DEFAULT_SOC_MAX: float = 0.90
+    # Phase D physical-realism defaults. AC-to-AC round-trip efficiency
+    # applied as sqrt(eta) on charge AND discharge so the round-trip
+    # preserves eta. SOC band 0-100% reflects the user's "use full 20 MWh"
+    # directive — equivalent to oversizing the install so the warranty
+    # band covers the full 20 MWh of usable energy.
+    DEFAULT_RTE_AC_AC: float = 0.97
+    DEFAULT_SOC_MIN: float = 0.0
+    DEFAULT_SOC_MAX: float = 1.0
     # 1.5% of 10 MW rated power — matches InvestmentParams.auxiliary_load_mw default.
     # Earlier value 0.3 MW (3%) was high-end; 0.15 MW is mid-industry for new BESS.
     DEFAULT_AUXILIARY_LOAD_MW: float = 0.15

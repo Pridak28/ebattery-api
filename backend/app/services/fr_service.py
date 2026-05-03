@@ -1348,9 +1348,12 @@ class FRService:
             afrr_down_capacity_rev = power_mw * hours_in_month * afrr_down_capacity_bid * acceptance_rate
 
             # ACTIVATION REVENUE (LIMITED by battery capacity)
-            # Battery: 15MW/30MWh = 2-hour duration
-            # Realistic: 1 cycle/day = 30 MWh × 30 days = 900 MWh/month max
-            battery_capacity_mwh = 30
+            # User directive (2026-05-03): catalog default is 10 MW / 20 MWh
+            # with full 20 MWh usable per cycle. The previous hardcoded 30
+            # MWh forced this method to a different size than the rest of
+            # the model and undercounted activation throughput on a
+            # 10 MW / 20 MWh scenario relative to its own params.
+            battery_capacity_mwh = float(settings.DEFAULT_CAPACITY_MWH)
             realistic_daily_cycles = 1.0
             max_monthly_energy_mwh = battery_capacity_mwh * realistic_daily_cycles * days_in_month
 

@@ -177,15 +177,15 @@ class InvestmentService:
         except (FileNotFoundError, ValueError, KeyError) as exc:
             warnings.append(f"PZU simulation failed ({type(exc).__name__}: {exc}); using fallback estimate.")
 
-        # Fallback: estimate based on typical Romanian market
-        # Assume avg buy ~60 EUR/MWh, avg sell ~110 EUR/MWh, 88% efficiency
+        # Fallback: estimate based on typical Romanian market.
+        # User directive (2026-05-03): RTE = 0.97 (3% loss).
         block_hours = 2
         energy_per_day = params.power_mw * block_hours
         days_per_year = 365
 
         avg_buy_price = 60  # EUR/MWh
         avg_sell_price = 110  # EUR/MWh
-        efficiency = 0.88
+        efficiency = float(params.rte_ac_ac)
 
         annual_charge_cost = avg_buy_price * energy_per_day * days_per_year
         annual_discharge_revenue = avg_sell_price * energy_per_day * efficiency * days_per_year

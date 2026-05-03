@@ -130,9 +130,12 @@ class InvestmentParams(BaseModel):
     opex_inflation_pct: float = Field(3.0, ge=0, le=20, description="Annual OPEX inflation %")
 
     # Phase D — physical realism (gap audit 2026-05-01).
-    rte_ac_ac: float = Field(0.88, ge=0.5, le=1.0, description="AC-to-AC round-trip efficiency (sqrt-symmetric)")
-    soc_min: float = Field(0.10, ge=0.0, le=0.5, description="Minimum SOC (warranty floor)")
-    soc_max: float = Field(0.90, ge=0.5, le=1.0, description="Maximum SOC (warranty ceiling)")
+    # User directive (2026-05-03): full 20 MWh usable, 3% per-cycle loss.
+    # Equivalent physical realism: oversize the install so the warranty
+    # band still covers the full 20 MWh of usable energy.
+    rte_ac_ac: float = Field(0.97, ge=0.5, le=1.0, description="AC-to-AC round-trip efficiency (sqrt-symmetric) — user directive: 0.97 (3% loss)")
+    soc_min: float = Field(0.0, ge=0.0, le=0.5, description="Minimum SOC — user directive: full DOD (0%)")
+    soc_max: float = Field(1.0, ge=0.5, le=1.0, description="Maximum SOC — user directive: full DOD (100%)")
     # Industry range for HVAC/BMS/fire suppression: 1-3% of rated power.
     # Default 1.5% (= 0.15 MW for 10 MW battery) — mid-range, matches modern
     # Sermatec/Huawei/BYD spec sheets. Earlier 0.3 MW (= 3%) was high-end.

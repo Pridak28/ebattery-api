@@ -30,9 +30,13 @@ class FRProductConfig(BaseModel):
 
 
 class FRSimulationParams(BaseModel):
-    """Parameters for FR simulation"""
+    """Parameters for FR simulation.
+
+    User directive (2026-05-03): full 20 MWh usable per cycle, 3% per
+    round-trip loss (RTE = 0.97).
+    """
     capacity_mwh: float = Field(20.0, ge=0.1, le=2000, description="Battery capacity in MWh")
-    round_trip_efficiency: float = Field(0.88, ge=0.5, le=1.0, description="Round-trip efficiency")
+    round_trip_efficiency: float = Field(0.97, ge=0.5, le=1.0, description="Round-trip efficiency — user directive: 0.97 (3% loss)")
 
     # Product configurations - each with own capacity price and activation rate
     afrr_up: FRProductConfig = Field(default_factory=lambda: FRProductConfig(power_mw=10.0))
@@ -135,7 +139,7 @@ class FRMultiProductRequest(BaseModel):
     )
     power_mw: float = Field(10.0, ge=0.1, le=1000, description="Total bid power MW per product")
     capacity_mwh: float = Field(20.0, ge=0.1, le=2000, description="Battery usable capacity")
-    round_trip_efficiency: float = Field(0.88, ge=0.5, le=1.0)
+    round_trip_efficiency: float = Field(0.97, ge=0.5, le=1.0, description="Round-trip efficiency — user directive: 0.97 (3% loss)")
     availability_pct: float = Field(97.5, ge=0.0, le=100.0)
     energy_cost_eur_mwh: float = Field(80.0, ge=0, description="Recharge energy price")
     activation_share: float = Field(0.10, ge=0.0, le=1.0, description="Share of market activation captured (bid stack proxy)")

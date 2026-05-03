@@ -5,7 +5,7 @@ Replaces the deterministic single-point IRR with P10 / P50 / P90 fan over
 the high-leverage drivers a lender or investor will stress-test:
 
   - activation_share        (0.05, 0.10, 0.20)  triangular
-  - rte_ac_ac               (0.85, 0.88, 0.90)  triangular
+  - rte_ac_ac               (0.95, 0.97, 0.98)  triangular  (user directive 2026-05-03)
   - degradation_y1          (0.020, 0.025, 0.035)  triangular
   - fx_ron_per_eur (info)   (4.85, 5.00, 5.20)  triangular  (informational)
   - pzu_avg_spread_pct      (0.85, 1.00, 1.15)  triangular  (multiplier on PZU revenue)
@@ -117,7 +117,8 @@ class SensitivityConfig(BaseModel):
     runs: int = Field(1000, ge=10, le=20000)
     discount_rate: float = Field(0.08, ge=0.0, le=0.30)
     activation_share: Tuple[float, float, float] = (0.05, 0.10, 0.20)
-    rte_ac_ac: Tuple[float, float, float] = (0.85, 0.88, 0.90)
+    # User directive (2026-05-03): central case 0.97 (3% per-cycle loss).
+    rte_ac_ac: Tuple[float, float, float] = (0.95, 0.97, 0.98)
     degradation_y1: Tuple[float, float, float] = (0.020, 0.025, 0.035)
     fx_ron_per_eur: Tuple[float, float, float] = (4.85, 5.00, 5.20)
     pzu_avg_spread_pct: Tuple[float, float, float] = (0.85, 1.00, 1.15)

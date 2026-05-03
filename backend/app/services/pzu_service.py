@@ -630,9 +630,9 @@ class PZUService:
         end_date: date = None,
         num_charge_hours: int = 3,
         num_discharge_hours: int = 3,
-        power_mw: float = 15.0,
-        capacity_mwh: float = 30.0,
-        efficiency: float = 0.88,
+        power_mw: float = settings.DEFAULT_POWER_MW,
+        capacity_mwh: float = settings.DEFAULT_CAPACITY_MWH,
+        efficiency: float = settings.DEFAULT_EFFICIENCY,
     ) -> PZUMonthlyOptimalResponse:
         """Get monthly optimal schedules with custom parameters"""
         df = self._load_price_data()
@@ -699,13 +699,14 @@ class PZUService:
     def get_daily_breakdown(
         self,
         month: str,  # Format: "2024-01"
-        power_mw: float = 15.0,
-        capacity_mwh: float = 30.0,
-        efficiency: float = 0.88,
+        power_mw: float = settings.DEFAULT_POWER_MW,
+        capacity_mwh: float = settings.DEFAULT_CAPACITY_MWH,
+        efficiency: float = settings.DEFAULT_EFFICIENCY,
     ) -> dict:
         """Get daily breakdown for a specific month.
 
-        Default ``efficiency`` aligned to ``settings.DEFAULT_RTE_AC_AC`` (0.88).
+        Defaults aligned to ``settings.*`` (10 MW / 20 MWh / 0.97 RTE per
+        2026-05-03 user directive).
         Note: this screening helper picks the cheapest/most-expensive ``BLOCK_HOURS``
         of the day without enforcing chronological order; use ``simulate()`` for
         bankable revenue numbers (Phase D2 SOC-aware dispatch).
@@ -807,7 +808,7 @@ class PZUService:
             }
         }
 
-    def get_hourly_prices(self, date_str: str, power_mw: float = 15.0, capacity_mwh: float = 30.0, efficiency: float = 0.88) -> dict:
+    def get_hourly_prices(self, date_str: str, power_mw: float = settings.DEFAULT_POWER_MW, capacity_mwh: float = settings.DEFAULT_CAPACITY_MWH, efficiency: float = settings.DEFAULT_EFFICIENCY) -> dict:
         """Get hourly prices for a specific date with energy costs calculated"""
         df = self._load_price_data()
 

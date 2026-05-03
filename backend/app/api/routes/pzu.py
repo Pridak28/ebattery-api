@@ -52,9 +52,9 @@ async def run_simulation(params: PZUSimulationParams):
 
 @router.get("/monthly-summary")
 async def get_monthly_summary(
-    power_mw: float = Query(15.0, ge=0.1, description="Battery power MW"),
-    capacity_mwh: float = Query(30.0, ge=0.1, description="Battery capacity MWh"),
-    efficiency: float = Query(0.88, ge=0.5, le=1.0, description="Round-trip efficiency"),
+    power_mw: float = Query(10.0, ge=0.1, description="Battery power MW (default 10 MW per user directive)"),
+    capacity_mwh: float = Query(20.0, ge=0.1, description="Battery capacity MWh (default 20 MWh per user directive)"),
+    efficiency: float = Query(0.97, ge=0.5, le=1.0, description="Round-trip efficiency (0.97 = 3% loss, per user directive)"),
     year: Optional[int] = Query(None, description="Filter by year"),
 ):
     """Get monthly arbitrage summary"""
@@ -121,9 +121,9 @@ async def get_monthly_optimal_schedules(
     end_date: Optional[date] = Query(date(2025, 12, 31), description="End date for analysis (default: 2025-12-31)"),
     num_charge_hours: int = Query(3, ge=1, le=12, description="Number of charge hours per month"),
     num_discharge_hours: int = Query(3, ge=1, le=12, description="Number of discharge hours per month"),
-    power_mw: float = Query(15.0, ge=0.1, description="Battery power in MW"),
-    capacity_mwh: float = Query(30.0, ge=0.1, description="Battery capacity in MWh"),
-    efficiency: float = Query(0.88, ge=0.5, le=1.0, description="Round-trip efficiency"),
+    power_mw: float = Query(10.0, ge=0.1, description="Battery power in MW (default 10 MW per user directive)"),
+    capacity_mwh: float = Query(20.0, ge=0.1, description="Battery capacity in MWh (default 20 MWh per user directive)"),
+    efficiency: float = Query(0.97, ge=0.5, le=1.0, description="Round-trip efficiency (0.97 = 3% loss, per user directive)"),
 ):
     """
     Get optimal charge/discharge schedules calculated separately for each month.
@@ -153,9 +153,9 @@ async def get_monthly_optimal_schedules(
 @router.get("/daily-breakdown/{month}")
 async def get_daily_breakdown(
     month: str,
-    power_mw: float = Query(15.0, ge=0.1, description="Battery power in MW"),
-    capacity_mwh: float = Query(30.0, ge=0.1, description="Battery capacity in MWh"),
-    efficiency: float = Query(0.90, ge=0.5, le=1.0, description="Round-trip efficiency"),
+    power_mw: float = Query(10.0, ge=0.1, description="Battery power in MW (default 10 MW per user directive)"),
+    capacity_mwh: float = Query(20.0, ge=0.1, description="Battery capacity in MWh (default 20 MWh per user directive)"),
+    efficiency: float = Query(0.97, ge=0.5, le=1.0, description="Round-trip efficiency (0.97 = 3% loss, per user directive)"),
 ):
     """
     Get daily breakdown for a specific month.
@@ -189,9 +189,9 @@ async def get_available_dates():
 @router.get("/hourly-prices/{date_str}")
 async def get_hourly_prices(
     date_str: str,
-    power_mw: float = Query(15.0, ge=0.1, description="Battery power in MW"),
-    capacity_mwh: float = Query(30.0, ge=0.1, description="Battery capacity in MWh"),
-    efficiency: float = Query(0.88, ge=0.5, le=1.0, description="Round-trip efficiency"),
+    power_mw: float = Query(10.0, ge=0.1, description="Battery power in MW (default 10 MW per user directive)"),
+    capacity_mwh: float = Query(20.0, ge=0.1, description="Battery capacity in MWh (default 20 MWh per user directive)"),
+    efficiency: float = Query(0.97, ge=0.5, le=1.0, description="Round-trip efficiency (0.97 = 3% loss, per user directive)"),
 ):
     """
     Get hourly prices for a specific date with energy costs calculated.
