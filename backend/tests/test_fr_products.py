@@ -46,7 +46,21 @@ def synthetic_fr_service(tmp_path: Path) -> FRService:
 
 
 def test_e1_capacity_revenue_uses_product_rate(synthetic_fr_service):
-    """aFRR capacity = 10 MW × 24 h × 5 €/MW/h × 97.5% availability ≈ €1170."""
+    """aFRR capacity = power × hours × CANONICAL_DAMAS_avg × availability.
+
+    Canonical price comes from app/market_data/capacity_prices.py
+    (recent-window DAMAS scrape mean of aFRRUp + aFRRDown / 2). This
+    test was previously asserting the old catalog-floor €5/MW/h; after
+    the 2026-05-04 canonical-source consolidation it now asserts the
+    canonical resolver value, so the test stays aligned with the
+    production code path automatically.
+    """
+    from app.market_data.capacity_prices import get_canonical_capacity_price
+
+    damas_up = get_canonical_capacity_price("aFRRUp").price_eur_mw_h
+    damas_down = get_canonical_capacity_price("aFRRDown").price_eur_mw_h
+    expected_rate = (damas_up + damas_down) / 2.0  # bidirectional aFRR avg
+
     req = FRMultiProductRequest(
         products=["aFRR"],
         power_mw=10.0,
@@ -59,8 +73,9 @@ def test_e1_capacity_revenue_uses_product_rate(synthetic_fr_service):
     )
     response = synthetic_fr_service.compute_multi_product_revenue(req)
     afrr = next(p for p in response.products if p.product == "aFRR")
-    expected_cap = 10.0 * 24.0 * 5.0 * 0.975
+    expected_cap = 10.0 * 24.0 * expected_rate * 0.975
     assert math.isclose(afrr.capacity_revenue_eur, expected_cap, rel_tol=1e-3)
+    assert math.isclose(afrr.capacity_eur_mw_h, expected_rate, rel_tol=1e-3)
 
 
 def test_e1_activation_revenue_uses_pay_as_bid(synthetic_fr_service):

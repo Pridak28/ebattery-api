@@ -33,49 +33,28 @@ from app.market_data.quality import (
 )
 from app.market_data.schemas import BANKABLE_SOURCE_KINDS, bankability_level_for_source
 
-# Real Romanian aFRR capacity-tender clearing prices, scraped from DAMAS
-# (Transelectrica) tender statistics. Used as the calibration anchor for
-# the model's capacity bid — replaces the prior synthetic
-# "22% of activation price" rule which produced bids ~3-4× too high
-# vs documented Romanian market reality.
-#
-# Source CSV: backend/data_catalog/processed/damas_capacity_clearing.csv
-# Re-scrape with: scripts/scrape_damas_capacity.py
-_DAMAS_CAPACITY_CSV = (
-    Path(__file__).resolve().parents[2]
-    / "data_catalog" / "processed" / "damas_capacity_clearing.csv"
+# Canonical aFRR capacity-price resolver — single source of truth across
+# project_annual_revenue, calculate_optimal_bids, calculate_safe_bid_prices,
+# and compute_multi_product_revenue. See app/market_data/capacity_prices.py
+# for the source ladder, modes, and bankability labels.
+from app.market_data.capacity_prices import (
+    get_canonical_capacity_price,
+    get_canonical_capacity_prices_summary,
 )
-# Fallbacks anchored on the 6 sampled tenders (Apr 2025 – Jan 2026)
-# in case the CSV is missing. Conservative side: aFRR capacity prices
-# have compressed through 2025 from ~€12 → ~€5/MW/h.
-_DAMAS_FALLBACK_AFRR_UP_EUR_MW_H = 8.72
-_DAMAS_FALLBACK_AFRR_DOWN_EUR_MW_H = 6.59
 
 
-def _load_damas_capacity_avgs() -> Dict[str, float]:
-    """Average DAMAS aFRRUp / aFRRDown capacity clearing prices (€/MW/h),
-    computed from the scraped CSV. Cached on the module to avoid re-reading.
-    """
-    if not _DAMAS_CAPACITY_CSV.exists():
-        return {
-            "aFRRUp": _DAMAS_FALLBACK_AFRR_UP_EUR_MW_H,
-            "aFRRDown": _DAMAS_FALLBACK_AFRR_DOWN_EUR_MW_H,
-        }
-    try:
-        df = pd.read_csv(_DAMAS_CAPACITY_CSV)
-        avgs = df.groupby("service")["avg_clearing_price_eur_mw_h"].mean().to_dict()
-        return {
-            "aFRRUp": float(avgs.get("aFRRUp", _DAMAS_FALLBACK_AFRR_UP_EUR_MW_H)),
-            "aFRRDown": float(avgs.get("aFRRDown", _DAMAS_FALLBACK_AFRR_DOWN_EUR_MW_H)),
-        }
-    except Exception:
-        return {
-            "aFRRUp": _DAMAS_FALLBACK_AFRR_UP_EUR_MW_H,
-            "aFRRDown": _DAMAS_FALLBACK_AFRR_DOWN_EUR_MW_H,
-        }
+def _canonical_capacity_avgs() -> Dict[str, float]:
+    """Convenience wrapper: returns {"aFRRUp": price, "aFRRDown": price}
+    using the default `public_damas_sample` mode (recent-window mean)."""
+    up = get_canonical_capacity_price("aFRRUp")
+    down = get_canonical_capacity_price("aFRRDown")
+    return {"aFRRUp": up.price_eur_mw_h, "aFRRDown": down.price_eur_mw_h}
 
 
-_DAMAS_CAPACITY_AVGS = _load_damas_capacity_avgs()
+# Module-level cache for backwards compatibility with existing call sites.
+# Refreshed on import; callers requiring live values should call
+# get_canonical_capacity_price() directly.
+_DAMAS_CAPACITY_AVGS = _canonical_capacity_avgs()
 
 
 from app.models.fr import (
@@ -741,7 +720,20 @@ class FRService:
                     f" ({'post-MARI' if mari_active else 'pre-MARI'} on {target_date.isoformat()})"
                 )
 
-            cap_eur_mw_h = float(cfg["capacity_eur_mw_h"])
+            # CANONICAL capacity price source: real DAMAS-derived clearing
+            # for aFRR, catalog floor for mFRR/FCR (no DAMAS scrape yet).
+            # Same value the FRProductBreakdown chart sees on the frontend
+            # — keeps backend math + UI display in sync.
+            if product == "aFRR":
+                # Average aFRRUp + aFRRDown so the per-product display row
+                # reflects the bidirectional reality of how a battery
+                # operator commits aFRR capacity (same MW available for
+                # both directions, single capacity bid).
+                cap_eur_mw_h = float(
+                    (_DAMAS_CAPACITY_AVGS["aFRRUp"] + _DAMAS_CAPACITY_AVGS["aFRRDown"]) / 2.0
+                )
+            else:
+                cap_eur_mw_h = float(cfg["capacity_eur_mw_h"])
             settlement = cfg["settlement"]
             symmetric = bool(cfg.get("symmetric", False))
 
@@ -925,12 +917,16 @@ class FRService:
             afrr_down_activation = float(row['afrr_down_activated_mwh'])
 
             # Calculate potential revenue for each direction.
-            # Capacity price anchored on ROMANIAN_FR_PRODUCTS["aFRR"] (5 EUR/MW/h).
-            # Previously hardcoded to 50/30 EUR/MW/h which inflated revenue ~10×.
-            afrr_capacity_eur_mw_h = float(ROMANIAN_FR_PRODUCTS["aFRR"]["capacity_eur_mw_h"])
+            # Capacity price comes from the canonical DAMAS resolver
+            # (recent-window mean from scraped tender clearing prices)
+            # so this method matches project_annual_revenue and
+            # calculate_optimal_bids. Was previously a flat catalog
+            # €5/MW/h regardless of direction. Per-direction:
+            afrr_up_capacity_eur_mw_h = _DAMAS_CAPACITY_AVGS["aFRRUp"]
+            afrr_down_capacity_eur_mw_h = _DAMAS_CAPACITY_AVGS["aFRRDown"]
 
             # aFRR+ revenue (discharge - get paid for delivery)
-            afrr_up_capacity_revenue = power_mw * slot_duration_hours * afrr_capacity_eur_mw_h
+            afrr_up_capacity_revenue = power_mw * slot_duration_hours * afrr_up_capacity_eur_mw_h
             if afrr_up_price > 0 and afrr_up_activation > 0:
                 afrr_up_activation_revenue = min(afrr_up_activation, power_mw * slot_duration_hours) * afrr_up_price
             else:
@@ -938,7 +934,7 @@ class FRService:
             afrr_up_potential = afrr_up_capacity_revenue + afrr_up_activation_revenue
 
             # aFRR- revenue (charge - can get paid if price negative)
-            afrr_down_capacity_revenue = power_mw * slot_duration_hours * afrr_capacity_eur_mw_h
+            afrr_down_capacity_revenue = power_mw * slot_duration_hours * afrr_down_capacity_eur_mw_h
             if afrr_down_price < 0 and afrr_down_activation > 0:
                 # Negative price = you get paid to charge
                 afrr_down_activation_revenue = min(afrr_down_activation, power_mw * slot_duration_hours) * abs(afrr_down_price)
@@ -1516,20 +1512,29 @@ class FRService:
         valid_up = afrr_up_prices[(afrr_up_prices > 0) & (afrr_up_prices < 500)]
         valid_down = afrr_down_prices[(afrr_down_prices.abs() > 0) & (afrr_down_prices.abs() < 500)]
 
-        # Calculate safe activation bid prices (at target percentile)
+        # Calculate safe activation bid prices (at target percentile).
+        # Activation pricing is still derived from historical activation
+        # quantiles — that's the correct source for activation revenue.
         safe_activation_up = float(valid_up.quantile(bid_percentile))
         safe_activation_down = float(valid_down.quantile(bid_percentile))
 
-        # Derive capacity bids (20-25% of activation prices)
-        # Conservative bidding uses lower ratio
-        capacity_ratio = 0.20 + (bid_percentile * 0.05)
-        safe_capacity_up = safe_activation_up * capacity_ratio
-        safe_capacity_down = abs(safe_activation_down) * capacity_ratio
+        # CAPACITY bids — canonical DAMAS resolver. Was previously
+        # `safe_activation × capacity_ratio` synthetic formula; that
+        # produced bids inconsistent with what the model's other paths
+        # (project_annual_revenue, calculate_optimal_bids) used. Now
+        # all four paths read from the same source.
+        damas_up = get_canonical_capacity_price("aFRRUp").price_eur_mw_h
+        damas_down = get_canonical_capacity_price("aFRRDown").price_eur_mw_h
+        # "Safe" bidding = bid below market avg to maximize acceptance.
+        # 0.85 multiplier mirrors the conservative strategy in
+        # project_annual_revenue.
+        safe_capacity_up = damas_up * 0.85
+        safe_capacity_down = damas_down * 0.85
 
-        # Floor anchored on catalog (5 EUR/MW/h aFRR), not arbitrary 15/10.
+        # Floor anchored on catalog (5 EUR/MW/h aFRR).
         afrr_floor = float(ROMANIAN_FR_PRODUCTS["aFRR"]["capacity_eur_mw_h"])
-        safe_capacity_up = min(60, max(afrr_floor, safe_capacity_up))
-        safe_capacity_down = min(40, max(afrr_floor, safe_capacity_down))
+        safe_capacity_up = min(20.0, max(afrr_floor, safe_capacity_up))
+        safe_capacity_down = min(20.0, max(afrr_floor, safe_capacity_down))
 
         # Calculate expected annual revenue with safe bidding.
         # battery_capacity_mwh anchored on catalog default (was hardcoded 30).

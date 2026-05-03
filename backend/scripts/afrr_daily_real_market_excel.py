@@ -93,23 +93,17 @@ def _filter_valid(prices: pd.Series) -> pd.Series:
     return prices[(prices.abs() > 0) & (prices.abs() < PRICE_VALID_MAX)]
 
 
-# Real DAMAS aFRR capacity-tender clearing prices (avg of sampled tenders,
-# Apr 2025 - Jan 2026). Anchors the bid instead of the prior synthetic
-# "22% of activation price" formula which produced bids ~3-4× too high.
-# Source: backend/data_catalog/processed/damas_capacity_clearing.csv
+# Real Romanian aFRR capacity prices — CANONICAL resolver
+# (app/market_data/capacity_prices.py). Same numbers as production
+# fr_service: recent-window DAMAS sample mean (€6.57 / €3.77 today).
+from app.market_data.capacity_prices import get_canonical_capacity_price
+
+
 def _load_damas_capacity_avgs() -> dict:
-    csv_path = ROOT / "data_catalog" / "processed" / "damas_capacity_clearing.csv"
-    if csv_path.exists():
-        try:
-            d = pd.read_csv(csv_path)
-            avgs = d.groupby("service")["avg_clearing_price_eur_mw_h"].mean().to_dict()
-            return {
-                "aFRRUp": float(avgs.get("aFRRUp", 8.72)),
-                "aFRRDown": float(avgs.get("aFRRDown", 6.59)),
-            }
-        except Exception:
-            pass
-    return {"aFRRUp": 8.72, "aFRRDown": 6.59}
+    return {
+        "aFRRUp": get_canonical_capacity_price("aFRRUp").price_eur_mw_h,
+        "aFRRDown": get_canonical_capacity_price("aFRRDown").price_eur_mw_h,
+    }
 
 
 _DAMAS_AVGS = _load_damas_capacity_avgs()
@@ -658,7 +652,10 @@ def main() -> None:
 
     out_dir = ROOT / "reports"
     out_dir.mkdir(exist_ok=True)
-    out_path = out_dir / f"aFRR_daily_real_market_{first_date}_to_{last_date}.xlsx"
+    out_path = (
+        out_dir
+        / f"aFRR_daily_real_DAMAS_anchored_bids_{first_date}_to_{last_date}.xlsx"
+    )
 
     with pd.ExcelWriter(out_path, engine="openpyxl") as xl:
         pd.DataFrame().to_excel(xl, sheet_name=SHEET_SUMMARY, index=False)

@@ -12,10 +12,29 @@ from app.models.fr import (
     FRMultiProductRequest,
     FRMultiProductResponse,
 )
+from app.market_data.capacity_prices import (
+    get_canonical_capacity_prices_summary,
+)
 from app.services.fr_service import FRService, ROMANIAN_FR_PRODUCTS
 
 router = APIRouter()
 fr_service = FRService()
+
+
+@router.get("/capacity-prices/canonical")
+async def get_canonical_capacity_prices():
+    """Single source of truth for the model's aFRR capacity bid prices.
+
+    Returns aFRRUp + aFRRDown clearing prices (€/MW/h) drawn from the
+    canonical resolver in app/market_data/capacity_prices.py. Same numbers
+    used by project_annual_revenue, calculate_optimal_bids,
+    calculate_safe_bid_prices, and compute_multi_product_revenue —
+    so the frontend stops drifting from the backend.
+
+    Includes the bankability label so consumers know how defensible the
+    number is. NOT bankable without participant settlement proof.
+    """
+    return get_canonical_capacity_prices_summary()
 
 
 @router.get("/products")
@@ -34,8 +53,25 @@ async def get_available_products():
 @router.get("/product-catalog")
 async def get_product_catalog():
     """Phase E2: Romanian FR product catalogue with capacity prices, settlement
-    convention, and min-bid thresholds (pre/post MARI 2026-04-01)."""
-    return {"products": ROMANIAN_FR_PRODUCTS}
+    convention, and min-bid thresholds (pre/post MARI 2026-04-01).
+
+    aFRR products are enriched with the CANONICAL DAMAS-derived
+    capacity price + bankability label so the frontend stops drifting
+    from the backend. `capacity_eur_mw_h` remains the catalog floor
+    reference; `damas_clearing_eur_mw_h` is the recent-window scraped
+    clearing price the model actually bids at.
+    """
+    canonical = get_canonical_capacity_prices_summary()
+    enriched = dict(ROMANIAN_FR_PRODUCTS)
+    if "aFRR" in enriched:
+        enriched["aFRR"] = dict(enriched["aFRR"])
+        enriched["aFRR"]["damas_clearing_up_eur_mw_h"] = canonical["aFRRUp"]["price_eur_mw_h"]
+        enriched["aFRR"]["damas_clearing_down_eur_mw_h"] = canonical["aFRRDown"]["price_eur_mw_h"]
+        enriched["aFRR"]["bankability_label"] = canonical["bankability_label"]
+        enriched["aFRR"]["capacity_price_source"] = canonical["source"]
+        enriched["aFRR"]["capacity_price_window_start"] = canonical["aFRRUp"]["window_start"]
+        enriched["aFRR"]["capacity_price_window_end"] = canonical["aFRRUp"]["window_end"]
+    return {"products": enriched}
 
 
 @router.post("/multi-product", response_model=FRMultiProductResponse)

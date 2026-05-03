@@ -99,6 +99,11 @@ export function FRProductBreakdown({ data }: { data: FRProductRow[] }) {
             <div className="font-mono uppercase text-slate-300">{p.product}</div>
             <div className="text-slate-400">
               {p.settlement.replace('_', '-')} · {fmtEur(p.capacity_eur_mw_h)}/MW/h
+              {p.product === 'aFRR' && (
+                <span className="ml-1 text-[10px] uppercase text-amber-300">
+                  DAMAS sample
+                </span>
+              )}
             </div>
             <div className="mt-1 text-slate-400">
               Min bid: {p.min_bid_mw} MW · {p.symmetric ? 'symmetric' : 'directional'}
@@ -107,6 +112,10 @@ export function FRProductBreakdown({ data }: { data: FRProductRow[] }) {
           </div>
         ))}
       </div>
+      <p className="mt-2 text-[10px] text-slate-500">
+        aFRR capacity rate = mean of recent DAMAS public-tender clearing samples
+        (NOT bankable — participant settlement required for bankable mode).
+      </p>
     </div>
   )
 }

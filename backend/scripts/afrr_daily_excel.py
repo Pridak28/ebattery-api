@@ -88,22 +88,19 @@ def _filter_valid(prices: pd.Series) -> pd.Series:
     return prices[(prices.abs() > 0) & (prices.abs() < PRICE_VALID_MAX)]
 
 
-# Real DAMAS aFRR capacity-tender clearing prices (avg sampled tenders,
-# Apr 2025 - Jan 2026) — anchors the bid instead of the synthetic
-# "22% of activation price" formula.
+# Real Romanian aFRR capacity prices — read from the CANONICAL resolver
+# (app/market_data/capacity_prices.py) so this script returns the same
+# numbers as the production fr_service. Default mode is the recent-window
+# DAMAS sample mean (currently €6.57 aFRRUp / €3.77 aFRRDown after the
+# Aug 2025 - Jan 2026 compression).
+from app.market_data.capacity_prices import get_canonical_capacity_price
+
+
 def _load_damas_capacity_avgs() -> dict:
-    csv_path = ROOT / "data_catalog" / "processed" / "damas_capacity_clearing.csv"
-    if csv_path.exists():
-        try:
-            d = pd.read_csv(csv_path)
-            avgs = d.groupby("service")["avg_clearing_price_eur_mw_h"].mean().to_dict()
-            return {
-                "aFRRUp": float(avgs.get("aFRRUp", 8.72)),
-                "aFRRDown": float(avgs.get("aFRRDown", 6.59)),
-            }
-        except Exception:
-            pass
-    return {"aFRRUp": 8.72, "aFRRDown": 6.59}
+    return {
+        "aFRRUp": get_canonical_capacity_price("aFRRUp").price_eur_mw_h,
+        "aFRRDown": get_canonical_capacity_price("aFRRDown").price_eur_mw_h,
+    }
 
 
 _DAMAS_AVGS = _load_damas_capacity_avgs()
