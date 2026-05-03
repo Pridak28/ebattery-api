@@ -17,9 +17,33 @@ const TOUR_STEPS: TourStep[] = [
       'Welcome to eBattery Analytics. This tool models Romanian BESS revenue using real OPCOM PZU + DAMAS aFRR data. Click Next to learn the key sections.',
   },
   {
-    title: 'Live data',
+    // W5-FRONTEND (T-MASTER-20260503T112225Z): the prior copy here read
+    // `title: 'Live data'` / `description: 'All numbers are backed by
+    // real Romanian market data, refreshed daily.'`. Both halves drifted
+    // from what the dashboard actually shows:
+    //   1. The two summary cards above the badge (aFRR €4.3M, PZU €1.8M)
+    //      are explicitly tagged `ILLUSTRATIVE` and quote hardcoded
+    //      figures — they are NOT backed by real market data; only the
+    //      simulators on /pzu, /fr-simulator and /investment are. So
+    //      "all numbers are backed by real Romanian market data" was
+    //      false on the very page the tour ran on.
+    //   2. The badge itself (`DataFreshnessBadge`) renders the actual
+    //      delivery-date range pulled from `/api/v1/data/manifest` and
+    //      lights up an amber `stale` chip when the lag exceeds 60 days
+    //      — so "refreshed daily" overclaims the cadence.
+    //   3. The `Live data` step title reintroduces the same overconfident
+    //      "live" framing the W1 / W2 unsafe-wording passes explicitly
+    //      downgraded on the `/investment` header `LIVE` chip
+    //      (commit 3275e29) and the global Sidebar `Live Data` chip
+    //      (commit 5a913e1) — see SOURCE_CONFIDENCE_AUDIT §7
+    //      ("live vs historical" wording).
+    // Reframed to match the badge's actual heading ("Market data backing")
+    // and to scope the claim to what the badge actually shows: the date
+    // range and freshness lag of the manifest datasets feeding the
+    // simulators, not a blanket guarantee about every figure on the page.
+    title: 'Market data backing',
     description:
-      'All numbers are backed by real Romanian market data, refreshed daily. The badge above shows current dataset coverage.',
+      'The badge above reads /api/v1/data/manifest and shows the delivery-date range and freshness lag for the OPCOM PZU + DAMAS aFRR datasets feeding the simulators. The two summary cards above it are tagged ILLUSTRATIVE — for real numbers, run a simulator.',
     target: '[data-tour="step-2"]',
     placement: 'bottom',
   },
