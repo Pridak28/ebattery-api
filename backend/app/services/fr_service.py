@@ -1081,7 +1081,8 @@ class FRService:
         self,
         date_str: str,
         power_mw: float,
-        target_acceptance_rate: float = 0.80
+        target_acceptance_rate: float = 0.80,
+        capacity_mwh: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Calculate optimal bid prices for a specific date.
@@ -1091,7 +1092,16 @@ class FRService:
         - aFRR- capacity bid price
         - Expected acceptance probability
         - Expected revenue
+
+        capacity_mwh anchors the daily energy throughput cap. When omitted,
+        falls back to settings.DEFAULT_CAPACITY_MWH (catalog default) — same
+        anchor pattern already used by calculate_safe_bid_prices below
+        (fr_service.py:1457). The previous hardcoded 30 MWh forced every
+        caller to a single hypothetical battery size and was the only
+        remaining hardcoded capacity in the optimal-bids path.
         """
+        if capacity_mwh is not None and capacity_mwh <= 0:
+            raise ValueError("capacity_mwh must be > 0")
         df = self._load_fr_data()
 
         # Parse target date
@@ -1161,11 +1171,16 @@ class FRService:
         afrr_down_capacity_revenue = power_mw * daily_hours * afrr_down_capacity_bid * estimated_acceptance
 
         # ACTIVATION REVENUE (LIMITED by battery capacity)
-        # Battery: 15MW/30MWh = 2-hour duration
-        # Can only discharge 30 MWh per day (1 full cycle)
-        # Must charge first (from PZU or aFRR-)
-
-        battery_capacity_mwh = 30
+        # Use the per-call capacity_mwh argument when supplied; otherwise fall
+        # back to settings.DEFAULT_CAPACITY_MWH (same anchor pattern as
+        # calculate_safe_bid_prices at fr_service.py:1457). The prior
+        # hardcoded 30 MWh forced every caller into a single hypothetical
+        # battery size and was the last hardcoded capacity in this method.
+        battery_capacity_mwh = (
+            float(capacity_mwh)
+            if capacity_mwh is not None
+            else float(settings.DEFAULT_CAPACITY_MWH)
+        )
         realistic_daily_cycles = 1.0
         max_daily_energy_mwh = battery_capacity_mwh * realistic_daily_cycles
 

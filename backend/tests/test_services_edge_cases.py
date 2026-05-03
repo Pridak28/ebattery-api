@@ -831,3 +831,105 @@ def test_project_annual_revenue_picks_afrr_up_when_more_profitable():
     assert out["months_analyzed"] >= 1
     # All months should select aFRR+ given the price signal
     assert any(m["selected_service"] == "aFRR+" for m in out["monthly_projections"])
+
+
+# ---------------------------------------------------------------------------
+# calculate_optimal_bids — capacity_mwh override (Branch 1 reduction).
+# ---------------------------------------------------------------------------
+def test_calculate_optimal_bids_capacity_mwh_override_changes_activation_revenue():
+    """Doubling the per-call capacity_mwh must scale the battery-throughput
+    cap and therefore the activation-revenue component (capacity-bid component
+    is independent of throughput, so it should not move).
+    """
+    import numpy as np
+    import pandas as pd
+
+    rng = np.random.default_rng(11)
+    rows = []
+    target = pd.Timestamp("2025-03-15")
+    for offset in range(-30, 31):
+        day = target + pd.Timedelta(days=offset)
+        regime = regulatory_regime_for_date(day.date())
+        for s in range(96):
+            rows.append({
+                "date": day,
+                "slot": s,
+                "afrr_up_price_eur": float(rng.normal(150.0, 30.0)),
+                "afrr_down_price_eur": float(rng.normal(-25.0, 20.0)),
+                "afrr_up_activated_mwh": float(rng.uniform(1.0, 3.0)),
+                "afrr_down_activated_mwh": float(rng.uniform(1.0, 3.0)),
+                "regulatory_regime": regime,
+            })
+    df = pd.DataFrame(rows)
+    svc = FRService()
+    _seed_fr(svc, df)
+
+    out_small = svc.calculate_optimal_bids(
+        date_str="2025-03-15", power_mw=10.0, capacity_mwh=10.0,
+    )
+    out_big = svc.calculate_optimal_bids(
+        date_str="2025-03-15", power_mw=10.0, capacity_mwh=40.0,
+    )
+    assert "error" not in out_small and "error" not in out_big
+
+    # Capacity bids are throughput-independent → identical across calls.
+    assert (
+        out_small["optimal_bids"]["afrr_up"]["recommended_capacity_bid"]
+        == out_big["optimal_bids"]["afrr_up"]["recommended_capacity_bid"]
+    )
+    # Activation-revenue depends on the throughput cap. With market-share
+    # path active and ample market activations, the larger cap should
+    # produce strictly larger activation revenue.
+    act_small = out_small["optimal_bids"]["afrr_up"]["activation_component"]
+    act_big = out_big["optimal_bids"]["afrr_up"]["activation_component"]
+    assert act_big > act_small
+
+
+def test_calculate_optimal_bids_capacity_mwh_default_matches_settings():
+    """Omitting capacity_mwh must use settings.DEFAULT_CAPACITY_MWH (the
+    same anchor pattern used elsewhere in the file). Passing the same
+    explicit value must produce an identical result.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from app.config import settings
+
+    rng = np.random.default_rng(12)
+    rows = []
+    target = pd.Timestamp("2025-03-15")
+    for offset in range(-30, 31):
+        day = target + pd.Timedelta(days=offset)
+        regime = regulatory_regime_for_date(day.date())
+        for s in range(96):
+            rows.append({
+                "date": day,
+                "slot": s,
+                "afrr_up_price_eur": float(rng.normal(150.0, 30.0)),
+                "afrr_down_price_eur": float(rng.normal(-25.0, 20.0)),
+                "afrr_up_activated_mwh": float(rng.uniform(1.0, 3.0)),
+                "afrr_down_activated_mwh": float(rng.uniform(1.0, 3.0)),
+                "regulatory_regime": regime,
+            })
+    df = pd.DataFrame(rows)
+    svc = FRService()
+    _seed_fr(svc, df)
+
+    out_default = svc.calculate_optimal_bids(date_str="2025-03-15", power_mw=10.0)
+    out_explicit = svc.calculate_optimal_bids(
+        date_str="2025-03-15",
+        power_mw=10.0,
+        capacity_mwh=float(settings.DEFAULT_CAPACITY_MWH),
+    )
+    assert out_default == out_explicit
+
+
+def test_calculate_optimal_bids_capacity_mwh_zero_or_negative_raises():
+    """capacity_mwh ≤ 0 must raise ValueError before any work is done."""
+    svc = FRService()
+    _seed_fr(svc, _make_synthetic_fr_df(n_days=5))
+
+    with pytest.raises(ValueError):
+        svc.calculate_optimal_bids(date_str="2025-01-15", power_mw=10.0, capacity_mwh=0)
+    with pytest.raises(ValueError):
+        svc.calculate_optimal_bids(date_str="2025-01-15", power_mw=10.0, capacity_mwh=-5)

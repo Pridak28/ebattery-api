@@ -201,6 +201,11 @@ async def get_optimal_bids(
     date_str: str,
     power_mw: float = Query(15.0, ge=0.1, description="Battery power in MW"),
     target_acceptance: float = Query(0.80, ge=0.5, le=0.95, description="Target acceptance rate (0.5-0.95)"),
+    capacity_mwh: Optional[float] = Query(
+        None,
+        ge=0.1,
+        description="Battery energy capacity MWh. Omit to use catalog default (settings.DEFAULT_CAPACITY_MWH).",
+    ),
 ):
     """
     Get optimal bid prices for a specific date.
@@ -220,6 +225,7 @@ async def get_optimal_bids(
             date_str=date_str,
             power_mw=power_mw,
             target_acceptance_rate=target_acceptance,
+            capacity_mwh=capacity_mwh,
         )
         if "error" in result:
             raise HTTPException(status_code=404, detail=result["error"])
