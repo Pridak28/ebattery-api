@@ -175,6 +175,31 @@ export const investmentApi = {
       seed?: number
     }
   }) => api.post('/investment/sensitivity', data),
+
+  // Real-scenario engine (mirrors scripts/bess_cashflow_scenarios_excel.py).
+  // Returns the 4 PICASSO/market-share scenarios with full PF cashflow,
+  // both modeled (engineering optimum) and realistic (operator drag +
+  // tax + depreciation) views per scenario.
+  scenarios: (data: {
+    epc_eur?: number
+    power_mw?: number
+    capacity_mwh?: number
+    equity_pct?: number
+    loan_pct?: number
+    loan_rate?: number
+    loan_term_yr?: number
+    tax_rate?: number
+    discount_rate?: number
+    stack_afrr_capacity?: number
+    stack_afrr_activation?: number
+    stack_pzu?: number
+    drag_afrr_capacity?: number
+    drag_afrr_activation?: number
+    drag_pzu?: number
+    scenario_keys?: string[]
+  } = {}) => api.post('/investment/scenarios', data),
+
+  scenarioDefaults: () => api.get('/investment/scenarios/defaults'),
 }
 
 export default api

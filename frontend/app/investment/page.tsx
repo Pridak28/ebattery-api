@@ -38,6 +38,7 @@ import IrrDistributionHistogram from '@/components/charts/IrrDistributionHistogr
 import DscrTable, { type DscrRow } from '@/components/charts/DscrTable'
 import DscrDetailPanel from '@/components/charts/DscrDetailPanel'
 import ScenarioComparator from '@/components/charts/ScenarioComparator'
+import ScenariosOverview from '@/components/charts/ScenariosOverview'
 import ScenarioDiffPanel from '@/components/charts/ScenarioDiffPanel'
 import SnapshotButtons from '@/components/ui/SnapshotButtons'
 import SavedReportsPanel from '@/components/ui/SavedReportsPanel'
@@ -341,6 +342,13 @@ export default function InvestmentAnalysis() {
             <ScenarioComparator />
           </div>
         )}
+      </div>
+
+      {/* Real scenario engine — 4 PICASSO/market-share cases (Modeled vs Realistic).
+          Live numbers from /api/v1/investment/scenarios. Mirrors the offline
+          BESS_Financial_Model_BANK_6tabs Excel. */}
+      <div className="my-4 sm:my-6">
+        <ScenariosOverview />
       </div>
 
       {/* Regulatory Timeline — upcoming RO / EU regulatory transitions */}

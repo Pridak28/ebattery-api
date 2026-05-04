@@ -11,6 +11,11 @@ from app.models.investment import (
     InvestorSummary,
 )
 from app.services.investment_service import InvestmentService
+from app.services.scenario_engine import (
+    ScenarioInputs,
+    SCENARIO_DEFAULTS,
+    analyze_all_scenarios,
+)
 from app.services.sensitivity import SensitivityConfig, SensitivityReport
 from app.services.tariff_exemption import (
     TariffExemptionRequest,
@@ -20,6 +25,82 @@ from app.services.tariff_exemption import (
 
 router = APIRouter()
 investment_service = InvestmentService()
+
+
+# ===================================================================
+#  Scenario engine — Romanian aFRR + PZU stacked, with realistic drag
+# ===================================================================
+class ScenariosRequest(BaseModel):
+    """Optional inputs for the scenario engine. All fields default to the
+    canonical 10 MW / 20 MWh / €3.5M / 30-70 financing setup."""
+    epc_eur: float | None = Field(None, description="EPC investment €")
+    power_mw: float | None = Field(None, description="Battery power MW")
+    capacity_mwh: float | None = Field(None, description="Battery capacity MWh")
+    equity_pct: float | None = Field(None, description="Equity % of EPC")
+    loan_pct: float | None = Field(None, description="Debt % of EPC")
+    loan_rate: float | None = Field(None, description="Loan interest rate (decimal)")
+    loan_term_yr: int | None = Field(None, description="Loan tenor years")
+    tax_rate: float | None = Field(None, description="Corporate tax rate (decimal)")
+    discount_rate: float | None = Field(None, description="NPV discount rate (decimal)")
+    # Stacking — physical hardware constraint
+    stack_afrr_capacity: float | None = Field(None, description="aFRR capacity stacking factor (0..1)")
+    stack_afrr_activation: float | None = Field(None, description="aFRR activation stacking factor (0..1)")
+    stack_pzu: float | None = Field(None, description="PZU stacking factor (0..1)")
+    # Operator drag — applied to realistic view only
+    drag_afrr_capacity: float | None = Field(None, description="aFRR capacity operator drag (0..1)")
+    drag_afrr_activation: float | None = Field(None, description="aFRR activation operator drag (0..1)")
+    drag_pzu: float | None = Field(None, description="PZU operator drag (0..1)")
+    # Scenario selection (default: all 4)
+    scenario_keys: list[str] | None = Field(
+        None,
+        description="Subset of A_current / B_picasso / C_mature / D_bear. Omit for all 4."
+    )
+
+    def to_inputs(self) -> ScenarioInputs:
+        defaults = ScenarioInputs()
+        kwargs = {}
+        for f in (
+            "epc_eur", "power_mw", "capacity_mwh", "equity_pct", "loan_pct",
+            "loan_rate", "loan_term_yr", "tax_rate", "discount_rate",
+            "stack_afrr_capacity", "stack_afrr_activation", "stack_pzu",
+            "drag_afrr_capacity", "drag_afrr_activation", "drag_pzu",
+        ):
+            v = getattr(self, f)
+            if v is not None:
+                kwargs[f] = v
+        return ScenarioInputs(**{**defaults.__dict__, **kwargs})
+
+
+@router.post("/scenarios")
+async def analyze_scenarios(request: ScenariosRequest = ScenariosRequest()):
+    """Run the 4 PICASSO / market-share scenarios with full project finance:
+    stacking, operator drag, tax (16% RO), 8-yr depreciation, loan
+    amortization, DSCR/LLCR/PLCR. Returns BOTH modeled (engineering
+    optimum) AND realistic (lender-grade) views per scenario.
+
+    Mirrors `scripts/bess_cashflow_scenarios_excel.py` so the Investment
+    page in the frontend shows the same numbers as the offline Excel.
+    """
+    try:
+        inputs = request.to_inputs()
+        return analyze_all_scenarios(inputs, request.scenario_keys)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/scenarios/defaults")
+async def get_scenario_defaults():
+    """Return the 4 scenario definitions (Y1 base values + compression
+    curves + descriptions) so the frontend can render the scenario list
+    without re-computing."""
+    return {
+        "scenarios": [
+            {"key": k, **{kk: v for kk, v in defs.items()
+                          if kk in ("label", "color", "description",
+                                    "afrr_capacity_y1", "afrr_activation_y1", "pzu_y1")}}
+            for k, defs in SCENARIO_DEFAULTS.items()
+        ],
+    }
 
 
 class SensitivityRequest(BaseModel):
