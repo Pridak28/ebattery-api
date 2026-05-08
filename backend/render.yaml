@@ -10,10 +10,12 @@ services:
         value: 3.11.0
       - key: DEBUG
         value: "false"
-      # Render mounts the repo at /opt/render/project/src
+      # Render mounts the repo at /opt/render/project/src.
+      # data_catalog/processed/ is tracked in git and contains damas_clean.csv
+      # + pzu_history_3y.csv (the files FRService and PZUService scan for).
       - key: DATA_DIR
-        value: /opt/render/project/src/backend/data
-      # FILL IN: HTTPS URL to a .zip / .tar.gz of the data/ folder.
+        value: /opt/render/project/src/backend/data_catalog/processed
+      # Optional: HTTPS URL to a .zip / .tar.gz of additional data files.
       # On startup, app/main.py downloads & extracts into DATA_DIR if empty.
       - key: BACKEND_DATA_URL
         value: ""

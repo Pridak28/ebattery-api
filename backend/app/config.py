@@ -22,15 +22,27 @@ _DEFAULT_CORS_ORIGINS: List[str] = [
 def _default_data_dir() -> Path:
     """Resolve the default DATA_DIR.
 
-    Allows overriding via the DATA_DIR env var so Render / Docker deployments
-    can point at a different mount. Falls back to in-repo backend/data
-    (which is a symlink to BOT BATTERY/data on contributor machines).
+    Resolution order:
+      1. DATA_DIR env var (Render / Docker override) — but ONLY if the path
+         exists, is a directory, and contains at least one file. This guards
+         against a stale env var pointing at a broken symlink (e.g. on Render
+         when backend/data is a Mac-only symlink that doesn't resolve).
+      2. backend/data_catalog/processed (canonical in-repo path, tracked).
+      3. backend/data (legacy / symlink for contributor machines).
     """
-    env_value = os.environ.get("DATA_DIR")
-    if env_value:
-        return Path(env_value).expanduser()
     backend_root = Path(__file__).resolve().parent.parent
     catalog_processed = backend_root / "data_catalog" / "processed"
+
+    env_value = os.environ.get("DATA_DIR")
+    if env_value:
+        env_path = Path(env_value).expanduser()
+        # Use env override only if it resolves to a real, non-empty directory.
+        try:
+            if env_path.is_dir() and any(env_path.iterdir()):
+                return env_path
+        except (OSError, PermissionError):
+            pass  # broken symlink / unreadable — fall through
+
     if catalog_processed.exists():
         return catalog_processed
     deploy_safe_data = backend_root / "data 2"
