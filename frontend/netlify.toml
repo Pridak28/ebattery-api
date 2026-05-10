@@ -2,6 +2,11 @@
   command = "npm run build"
   publish = "out"
 
+[build.environment]
+  # Static export — disable Netlify's auto-injected Next.js plugin
+  # (avoids version-resolution failures on @netlify/plugin-nextjs)
+  NETLIFY_NEXT_PLUGIN_SKIP = "true"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
