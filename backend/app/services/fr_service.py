@@ -812,6 +812,59 @@ class FRService:
             regime_row_counts=regime_row_counts,
         )
 
+    def get_market_data(
+        self,
+        product: Optional[str] = None,
+        start_date: Optional[Any] = None,
+        end_date: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Return raw market rows, optionally filtered by product and date range.
+
+        Used by GET /api/v1/fr/data. Date filters accept python `date` objects
+        or ISO strings (YYYY-MM-DD).
+        """
+        df = self._load_fr_data().copy()
+
+        if "date" in df.columns and start_date is not None:
+            sd = pd.to_datetime(str(start_date))
+            df = df[pd.to_datetime(df["date"]) >= sd]
+        if "date" in df.columns and end_date is not None:
+            ed = pd.to_datetime(str(end_date))
+            df = df[pd.to_datetime(df["date"]) <= ed]
+
+        # Optional product filter — only applies when a product column exists.
+        if product and "product" in df.columns:
+            df = df[df["product"].astype(str).str.lower() == product.lower()]
+
+        # Cap response size to keep payload reasonable; client can request narrower windows.
+        MAX_ROWS = 5000
+        truncated = len(df) > MAX_ROWS
+        rows = df.head(MAX_ROWS).to_dict(orient="records")
+        # Convert pandas Timestamps and numpy types to JSON-friendly primitives.
+        for r in rows:
+            for k, v in list(r.items()):
+                if hasattr(v, "isoformat"):
+                    r[k] = v.isoformat()[:10] if hasattr(v, "date") and not hasattr(v, "hour") else v.isoformat()
+                elif pd.isna(v):
+                    r[k] = None
+                elif hasattr(v, "item"):
+                    r[k] = v.item()
+
+        return {
+            "rows": rows,
+            "row_count": len(rows),
+            "truncated": truncated,
+            "filter": {
+                "product": product,
+                "start_date": str(start_date) if start_date else None,
+                "end_date": str(end_date) if end_date else None,
+            },
+            "data_metadata": self._build_data_metadata(
+                df,
+                Path(self._fr_metadata.get("source_file")) if self._fr_metadata.get("source_file") else None,
+            ),
+        }
+
     def get_market_stats(self) -> Dict[str, Any]:
         df = self._load_fr_data()
         stats = {"total_slots": len(df), "date_range": {}, "afrr_stats": {}, "data_metadata": self._build_data_metadata(df, Path(self._fr_metadata.get("source_file")) if self._fr_metadata.get("source_file") else None)}
