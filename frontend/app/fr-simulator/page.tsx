@@ -61,9 +61,12 @@ export default function FRSimulator() {
     mfrr_up: { enabled: false, power_mw: 0 },
     mfrr_down: { enabled: false, power_mw: 0 },
     energy_cost_eur_mwh: 80,
-    capacity_price_eur_mw_h: 11.64, // Live DAMAS rate (commit 97e4d2e); auto-refreshed from /fr/capacity-prices/canonical
-    activation_rate: 0.10,
-    activation_price_up_eur_mwh: 170, // Live last-12mo weighted avg
+    // Seed = canonical /fr/capacity-prices/canonical sum (UP €6.57 + DOWN €3.77 ≈ €10.35).
+    // Auto-refreshed on mount; user can override. Value represents combined UP+DOWN per MW per hour.
+    capacity_price_eur_mw_h: 10.35,
+    // Backend default = 0.03 (3%). Battery is throughput-bound at ~0.91% market share; values >1% are cosmetic.
+    activation_rate: 0.03,
+    activation_price_up_eur_mwh: 170, // Live last-12mo UP weighted avg
     activation_price_down_eur_mwh: 130,
     start_date: '2024-07-01',
     end_date: '2025-11-06',
@@ -149,8 +152,8 @@ export default function FRSimulator() {
             n_samples: data?.aFRRUp?.n_samples ?? 0,
           })
           // Sync the input default to the live combined rate (only if the user
-          // hasn't manually overridden it from the seeded 11.64 default).
-          setParams((p) => (p.capacity_price_eur_mw_h === 11.64 ? { ...p, capacity_price_eur_mw_h: Number(combined.toFixed(2)) } : p))
+          // hasn't manually overridden it from the seeded 10.35 default).
+          setParams((p) => (p.capacity_price_eur_mw_h === 10.35 ? { ...p, capacity_price_eur_mw_h: Number(combined.toFixed(2)) } : p))
         }
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
@@ -756,24 +759,36 @@ export default function FRSimulator() {
             )}
           </div>
           <div>
-            <label htmlFor="fr-activation-rate-slider" className="block text-xs uppercase tracking-wider text-slate-400 mb-1.5">
-              Market Share / Activation Rate (%)
+            <label htmlFor="fr-activation-rate-slider" className="flex items-center justify-between text-xs uppercase tracking-wider text-slate-400 mb-1.5">
+              <span title="Fraction of total PICASSO activation calls captured by this battery. Backend default = 3%. Note: a 10 MW battery is THROUGHPUT-BOUND at ~0.91% share — any value above 1% saturates and adds no additional MWh.">
+                PICASSO activation share (%)
+              </span>
+              {params.activation_rate > 0.012 && (
+                <span
+                  className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-mono normal-case"
+                  title="Above 1% share, the 10 MW / 20 MWh battery hits its physical throughput cap (~7,361 MWh/yr). Additional share is cosmetic — revenue does not scale further."
+                >
+                  Throughput-bound
+                </span>
+              )}
             </label>
             <div className="flex items-center gap-2">
               <input
                 id="fr-activation-rate-slider"
                 type="range"
-                min="1"
-                max="50"
+                min="0.1"
+                max="20"
+                step="0.1"
                 value={params.activation_rate * 100}
                 onChange={(e) => setParams({ ...params, activation_rate: parseFloat(e.target.value) / 100 })}
                 className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-                aria-valuetext={`${(params.activation_rate * 100).toFixed(0)} percent market share / activation rate`}
+                aria-valuetext={`${(params.activation_rate * 100).toFixed(1)} percent PICASSO activation share`}
               />
-              <span className="text-sm font-mono text-[#00ffd1] w-12">{(params.activation_rate * 100).toFixed(0)}%</span>
+              <span className="text-sm font-mono text-[#00ffd1] w-14 text-right">{(params.activation_rate * 100).toFixed(1)}%</span>
             </div>
             <div className="text-[10px] text-slate-400 mt-1">
-              10% = realistic market share for 15MW new entrant. Higher rates (20-30%) = optimistic scenarios.
+              0.91% = throughput cap for 10 MW BESS. Backend default 3%. Higher values produce identical MWh
+              (saturation) but capacity revenue still scales with capacity-price input.
             </div>
           </div>
           <div>
@@ -882,7 +897,10 @@ export default function FRSimulator() {
             </div>
             <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 lg:gap-6">
               <div>
-                <div className="text-[10px] sm:text-[11px] uppercase tracking-wider text-slate-400 mb-1">Annual Revenue</div>
+                <div
+                  className="text-[10px] sm:text-[11px] uppercase tracking-wider text-slate-400 mb-1 cursor-help"
+                  title="Annualized from /fr/simulate over the selected date window (months × 12 / monthsCount)."
+                >Annual Revenue · main sim</div>
                 <div className="text-lg sm:text-2xl font-bold text-white font-mono">
                   {formatCompact(derivedMetrics.annualRevenue)}
                 </div>
@@ -920,10 +938,13 @@ export default function FRSimulator() {
             </div>
           </div>
 
-          {/* KPI Cards Row - Annualized (12 months) */}
+          {/* KPI Cards Row - Annualized (12 months) — backend-annualized field */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div className="stat-card">
-              <div className="stat-label">Annual Revenue</div>
+              <div
+                className="stat-label cursor-help"
+                title="Backend-annualized: simulation.annual_revenue_eur direct from /fr/simulate response."
+              >Annual Revenue · 12-mo annualized</div>
               <div className="stat-value text-white font-mono">
                 {formatCompact(simulation.annual_revenue_eur)}
               </div>
@@ -1435,21 +1456,23 @@ export default function FRSimulator() {
                 <th className="text-center">Activation Rate</th>
                 <th className="text-center">Capacity Price</th>
                 <th className="text-center">Activation Price</th>
-                <th className="text-right">Annual Revenue</th>
+                <th className="text-right" title="Scenario-formula: capacity_rev + activation_rev. NOT from /fr/simulate. See Annual Revenue · main sim above for the live number.">Annual Revenue · scenario</th>
                 <th className="text-right">Annual Profit</th>
                 <th className="text-right">ROI ({formatCompact(params.investment_eur)})</th>
               </tr>
             </thead>
             <tbody>
               {[
-                // Capacity prices = COMBINED UP+DOWN rate per MW per hour.
-                // Live anchor: €11.64/MW/h (last-12mo, both directions). Activation
-                // prices = volume-weighted across UP+DOWN dispatch (live observed
-                // €146/MWh). Activation rate = PICASSO market-share fraction.
-                { name: 'Pessimistic', desc: 'Post-MARI compression, 5% share', actRate: 0.05, capPrice: 9, actPrice: 130, color: 'red' },
-                { name: 'Base Case', desc: 'Live last-12mo, 10% share', actRate: 0.10, capPrice: 11.64, actPrice: 146, color: 'emerald', highlight: true },
-                { name: 'Moderate', desc: 'Established player, 12% share', actRate: 0.12, capPrice: 12, actPrice: 155, color: 'blue' },
-                { name: 'Optimistic', desc: 'Premium ops, 20% share', actRate: 0.20, capPrice: 13, actPrice: 170, color: 'emerald' },
+                // Capacity prices = COMBINED UP+DOWN rate per MW per hour, matching
+                // /fr/capacity-prices/canonical (UP+DOWN sum). Live anchor when liveCanonical
+                // is loaded; otherwise the seeded 10.35 default. Base case auto-uses live rate.
+                // Activation rate = PICASSO activation share (battery is throughput-bound at
+                // ~0.91%; any value above 1% is mostly cosmetic). Activation prices =
+                // volume-weighted across UP+DOWN dispatch (live observed €146/MWh).
+                { name: 'Pessimistic', desc: 'Post-MARI compression, 0.5% share', actRate: 0.005, capPrice: 8, actPrice: 130, color: 'red' },
+                { name: 'Base Case', desc: 'Live last-12mo, 1% throughput-bound share', actRate: 0.01, capPrice: liveCanonical?.combined_eur_mw_h ?? 10.35, actPrice: 146, color: 'emerald', highlight: true },
+                { name: 'Moderate', desc: 'Established player, 2% share', actRate: 0.02, capPrice: 11, actPrice: 155, color: 'blue' },
+                { name: 'Optimistic', desc: 'Premium ops, 3% share', actRate: 0.03, capPrice: 12, actPrice: 170, color: 'emerald' },
               ].map((scenario) => {
                 const power = params.afrr_up.power_mw
                 const hoursPerYear = 8760
@@ -1462,10 +1485,15 @@ export default function FRSimulator() {
                 // (live = €11.64/MW/h), so NO ×2 multiplier.
                 const capacityRevenue = power * scenario.capPrice * hoursPerYear
 
-                // Activation revenue: live observation = ~7,361 MWh/yr at 10% PICASSO share.
-                // Scale linearly with share.
-                const liveActivationMwhAt10pct = 7361
-                const activationMwh = liveActivationMwhAt10pct * (scenario.actRate / 0.10)
+                // Activation revenue: backend simulate() at default 3% share dispatches
+                // ~7,361 MWh/yr. Battery is throughput-bound at ~0.91% share, so any value
+                // above 1% saturates at the same MWh ceiling. Below 1%, scale linearly.
+                const liveActivationMwhAtCap = 7361 // throughput-bound maximum
+                const throughputBoundShare = 0.01
+                const activationMwh =
+                  scenario.actRate >= throughputBoundShare
+                    ? liveActivationMwhAtCap
+                    : liveActivationMwhAtCap * (scenario.actRate / throughputBoundShare)
                 const activationRevenue = activationMwh * scenario.actPrice
 
                 // Recharge cost: only UP-direction activations require buying energy back from PZU.
@@ -2040,7 +2068,10 @@ export default function FRSimulator() {
                         </div>
                       </div>
                       <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                        <div className="text-slate-400 text-sm mb-1">Projected Annual Revenue</div>
+                        <div
+                          className="text-slate-400 text-sm mb-1 cursor-help"
+                          title="From /fr/revenue-projection — historical-pattern projection conditioned on selected strategy + acceptance rate. Not the same as main-sim Annual Revenue."
+                        >Annual Revenue · revenue-projection endpoint</div>
                         <div className="text-2xl font-bold text-emerald-400 font-mono">
                           €{(revenueProjection.total_projected_annual_revenue / 1000000).toFixed(2)}M
                         </div>
@@ -2276,7 +2307,10 @@ export default function FRSimulator() {
                     </div>
 
                     <div>
-                      <div className="text-sm text-slate-400 mb-1">Annual Revenue</div>
+                      <div
+                        className="text-sm text-slate-400 mb-1 cursor-help"
+                        title="From /fr/safe-bid-calculator — assumes bidding strictly below market average to hit target acceptance %. Distinct from main-sim Annual Revenue."
+                      >Annual Revenue · safe-bid strategy</div>
                       <div className="text-3xl font-bold text-emerald-400">
                         €{(safeBidsData.expected_revenue.annual / 1000000).toFixed(2)}M
                       </div>
@@ -2321,7 +2355,10 @@ export default function FRSimulator() {
                         <tr className="border-b border-slate-700">
                           <th className="text-left py-3 px-4 text-slate-400 font-medium">Strategy</th>
                           <th className="text-right py-3 px-4 text-slate-400 font-medium">Acceptance Rate</th>
-                          <th className="text-right py-3 px-4 text-slate-400 font-medium">Annual Revenue</th>
+                          <th
+                            className="text-right py-3 px-4 text-slate-400 font-medium cursor-help"
+                            title="Per-strategy projection from /fr/safe-bid-calculator. Independent from the main-sim and revenue-projection Annual Revenue figures above."
+                          >Annual Revenue · safe-bid</th>
                           <th className="text-right py-3 px-4 text-slate-400 font-medium">Utilization</th>
                           <th className="text-right py-3 px-4 text-slate-400 font-medium">Risk Level</th>
                         </tr>
